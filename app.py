@@ -70,7 +70,7 @@ def render_chart_panel(key_index, default_symbol, timeframe, stock_list):
 
 # --- 3. ส่วนแสดงผลหน้าเว็บหลัก ---
 
-st.title("🚀 Real-Time Hybrid Dashboard")
+st.title("🚀 Hybrid Dashboard")
 
 # Sidebar ตั้งค่า
 with st.sidebar:
@@ -137,4 +137,5 @@ if not df_compare.empty:
             df_compare.style.format({'Price': '{:.2f}', 'Change %': '{:+.2f}%'})
             .background_gradient(subset=['Change %'], cmap='RdYlGn', vmin=-2, vmax=2),
             use_container_width=True
+
         )
