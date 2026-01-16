@@ -140,6 +140,9 @@ if page == t("🔍 วิเคราะห์รายตัว", "Single View"
     df = get_pro_data(symbol, timeframe)
     if not df.empty:
         st.subheader(f"📊 {symbol} ({timeframe})")
+        with header_col2:
+            if st.button(f"🔄 {t('กลับมาล่าสุด', 'Reset View')}", use_container_width=True):
+                st.rerun()
         curr = df['close'].iloc[-1]
         m1, m2, m3, m4 = st.columns(4)
         m1.metric(t("ราคาล่าสุด", "Price"), f"{curr:,.2f}", f"{curr - df['close'].iloc[-2]:,.2f}")
@@ -187,4 +190,5 @@ else:
                 c = StreamlitChart(height=450) 
                 render_full_chart(c, d)
                 c.load()
+
 
