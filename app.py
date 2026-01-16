@@ -41,11 +41,12 @@ def get_pro_data(symbol, timeframe):
     tf_map = {'5min': '5m', '15min': '15m', '1hour': '1h', '1day': '1d'}
     interval = tf_map.get(timeframe, '1d')
     
-    
-    if timeframe == '1day':
-        period = '6mo'  
+   if timeframe == '5min' or timeframe == '15min':
+        period = '5d'
+    elif timeframe == '1hour':
+        period = '1mo'
     else:
-        period = '5d'   
+        period = '6mo'   
     
     try:
         df = yf.download(symbol, interval=interval, period=period, progress=False, auto_adjust=False)
@@ -161,6 +162,17 @@ if page == t("🔍 วิเคราะห์รายตัว", "Single View"
                 else: st.info(t("⌛ ถือ/รอ (Sideway)", "⌛ HOLD/WAIT"))
             with s_col2:
                 st.table(df[df['signal'] != 0][['time', 'close', 'signal']].tail(3))
+    with cf2:
+    st.markdown(f"""
+        <div style="text-align: center; color: gray; font-size: 14px;">
+            <p>© 2026 <b>KWAN TEST</b> | Intelligent Trading Analysis System</p>
+            <p>📊 Data Source: <a href="https://finance.yahoo.com/quote/{st.session_state.selected_stock}" target="_blank" style="color: #ff4b4b; text-decoration: none;">Verify on Yahoo Finance (Official)</a></p>
+            <p style="font-size: 12px; opacity: 0.6;">Disclaimer: ข้อมูลนี้ใช้เพื่อการทดสอบและวิเคราะห์เชิงเทคนิคเท่านั้น ไม่ใช่คำแนะนำในการลงทุน</p>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
+    
 else:
     st.subheader(t("📊 กระดาน 4 จอ", "4-Screen Grid"))
     grid_cols = st.columns(2)
@@ -173,5 +185,6 @@ else:
                 c = StreamlitChart(height=450) 
                 render_full_chart(c, d)
                 c.load()
+
 
 
