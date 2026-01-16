@@ -6,7 +6,7 @@ from lightweight_charts.widgets import StreamlitChart
 from streamlit_autorefresh import st_autorefresh
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(layout="wide", page_title="Kwan TEST", page_icon="📈")
+st.set_page_config(layout="wide", page_title="KWAN TEST", page_icon="📈")
 
 st.markdown("""
     <style>
@@ -21,9 +21,10 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st_autorefresh(interval=30000, key="kwan TEST")
+# ปรับ Auto-refresh เป็น 120,000ms = 2 นาที
+st_autorefresh(interval=120000, key="KWAN TEST")
 
-# --- 2. SYSTEM STATE ---TEST
+# --- 2. SYSTEM STATE ---
 if 'lang' not in st.session_state: st.session_state.lang = 'TH'
 if 'selected_stock' not in st.session_state: st.session_state.selected_stock = "AAPL"
 
@@ -38,7 +39,7 @@ ASSET_GROUPS = {
 ALL_SYMBOLS = [s for sub in ASSET_GROUPS.values() for s in sub]
 
 # --- 3. DATA ENGINE ---
-@st.cache_data(ttl=15)
+@st.cache_data(ttl=110) # ปรับ Cache TTL ให้ใกล้เคียงกับ Refresh rate
 def get_pro_data(symbol, timeframe):
     tf_map = {'5min': '5m', '15min': '15m', '1hour': '1h', '1day': '1d'}
     interval = tf_map.get(timeframe, '1d')
@@ -57,23 +58,20 @@ def get_pro_data(symbol, timeframe):
         df = df.reset_index().rename(columns={'Datetime': 'time', 'Date': 'time'})
         df['time'] = df['time'].apply(lambda x: x.strftime('%Y-%m-%d %H:%M:%S')) 
         
-        # EMA
+        # Indicator Calculations
         df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
         df['ema200'] = df['close'].ewm(span=200, adjust=False).mean()
-        # BB
         df['sma20'] = df['close'].rolling(window=20).mean()
         df['std20'] = df['close'].rolling(window=20).std()
         df['bb_up'] = df['sma20'] + (df['std20'] * 2)
         df['bb_low'] = df['sma20'] - (df['std20'] * 2)
-        # RSI
+        
         delta = df['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         df['rsi'] = 100 - (100 / (1 + (gain / loss)))
-        # MACD
-        df['macd_line'] = df['close'].ewm(span=12, adjust=False).mean() - df['close'].ewm(span=26, adjust=False).mean()
         
-        # S/R
+        df['macd_line'] = df['close'].ewm(span=12, adjust=False).mean() - df['close'].ewm(span=26, adjust=False).mean()
         df['res'] = df['high'].rolling(window=20).max()
         df['sup'] = df['low'].rolling(window=20).min()
         df['signal'] = 0
@@ -97,6 +95,7 @@ with st.sidebar:
     
     st.divider()
     st.markdown(f"**⚙️ {t('ตั้งค่ากราฟ', 'Indicators')}**")
+    
     show_vol = st.checkbox(t("📊 วอลุ่ม", "Volume"), value=True)
     show_ema50 = st.checkbox("EMA 50", value=True)
     show_ema200 = st.checkbox("EMA 200", value=True)
@@ -104,43 +103,31 @@ with st.sidebar:
     show_rsi = st.checkbox("RSI (Separate)", value=False)
     show_macd = st.checkbox("MACD (Separate)", value=False)
     
-    if st.button("🔄 " + t("ล้างข้อมูล", "Refresh Data"), use_container_width=True):
-        st.cache_data.clear(); st.rerun()
-
+    st.divider()
     for cat, items in ASSET_GROUPS.items():
         with st.expander(cat):
             for sym, name in items.items():
                 if st.button(name, key=f"s_{sym}", use_container_width=True):
                     st.session_state.selected_stock = sym; st.rerun()
 
-# --- 5. CHART HELPER (SOLVING SCALE & ENCODING) ---
+# --- 5. CHART HELPER ---
 def render_full_chart(chart_obj, data):
-    # กราฟหลัก (Price) - ใช้ภาษาอังกฤษเพื่อกัน Encoding เพี้ยน
     chart_obj.legend(visible=True, font_size=12, font_family='Trebuchet MS')
     chart_obj.set(data)
     
-    # Volume (Overlay ในพื้นที่ราคาหลัก)
     if show_vol:
         v = chart_obj.create_histogram(name='Volume', color='rgba(0, 150, 136, 0.4)')
         v.set(data[['time', 'volume']].rename(columns={'volume': 'Volume'}))
-        
-    # Price Overlays
     if show_bb:
         chart_obj.create_line(name='BB Up', color='rgba(173, 216, 230, 0.4)').set(data[['time', 'bb_up']].rename(columns={'bb_up': 'BB Up'}))
         chart_obj.create_line(name='BB Low', color='rgba(173, 216, 230, 0.4)').set(data[['time', 'bb_low']].rename(columns={'bb_low': 'BB Low'}))
-
     if show_ema50:
         chart_obj.create_line(name='EMA 50', color='#FFEB3B').set(data[['time', 'ema50']].rename(columns={'ema50': 'EMA 50'}))
     if show_ema200:
         chart_obj.create_line(name='EMA 200', color='#E040FB').set(data[['time', 'ema200']].rename(columns={'ema200': 'EMA 200'}))
-        
-    # แยก Pane (RSI / MACD)
-    # ใช้การสร้าง Pane แยกเพื่อไม่ให้ Scale 0-100 ของ RSI มาบีบกราฟราคาหลัก
     if show_rsi:
-        # การสร้าง line ใหม่หลังจาก .set() กราฟหลัก ตัว Library จะพยายามแยกหน้าต่างให้
         rsi_l = chart_obj.create_line(name='RSI', color='#2962FF')
         rsi_l.set(data[['time', 'rsi']].rename(columns={'rsi': 'RSI'}))
-        
     if show_macd:
         macd_l = chart_obj.create_line(name='MACD', color='#FF5252')
         macd_l.set(data[['time', 'macd_line']].rename(columns={'macd_line': 'MACD'}))
@@ -149,7 +136,6 @@ def render_full_chart(chart_obj, data):
 if page == t("🔍 วิเคราะห์รายตัว", "Single View"):
     symbol = st.session_state.selected_stock
     df = get_pro_data(symbol, timeframe)
-
     if not df.empty:
         st.subheader(f"📊 {symbol} ({timeframe})")
         curr = df['close'].iloc[-1]
@@ -159,7 +145,6 @@ if page == t("🔍 วิเคราะห์รายตัว", "Single View"
         m3.metric(t("แนวรับ", "Support"), f"{df['sup'].iloc[-1]:,.2f}")
         m4.metric(t("กำไรระบบ", "Strategy Profit"), f"{df['cum_ret'].iloc[-1]*100:.2f}%")
 
-        # ความสูง 900 เป็นค่าที่กำลังดีสำหรับจอส่วนใหญ่เมื่อมี 3 หน้าต่างย่อย
         chart = StreamlitChart(height=900)
         render_full_chart(chart, df)
         chart.load()
