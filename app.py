@@ -1,12 +1,12 @@
-# -*- coding: utf-8 -*-
+
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
 from lightweight_charts.widgets import StreamlitChart
 from streamlit_autorefresh import st_autorefresh
+import pytz 
 
-# --- 1. CONFIGURATION & STYLING ---
 st.set_page_config(layout="wide", page_title="Kwan test", page_icon="📈")
 
 st.markdown("""
@@ -40,18 +40,27 @@ ASSET_GROUPS = {
 
 ALL_SYMBOLS = [s for sub in ASSET_GROUPS.values() for s in sub]
 
-# --- 3. DATA ENGINE ---
 @st.cache_data(ttl=15)
 def get_pro_data(symbol, timeframe):
     tf_map = {'5min': '5m', '15min': '15m', '1hour': '1h', '1day': '1d'}
     interval = tf_map.get(timeframe, '1d')
     period = '2y' if timeframe == '1day' else '60d'
+    
     try:
-        df = yf.download(symbol, interval=interval, period=period, progress=False)
+        df = yf.download(symbol, interval=interval, period=period, progress=False, auto_adjust=False, multi_level_index=False)
+        
         if df.empty: return pd.DataFrame()
+        
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-        df = df.reset_index().rename(columns={'Datetime': 'time', 'Date': 'time'})
         df.columns = df.columns.str.lower()
+        
+        if isinstance(df.index, pd.DatetimeIndex):
+            if df.index.tz is None:
+                df.index = df.index.tz_localize('UTC')
+            df.index = df.index.tz_convert('Asia/Bangkok')
+            
+        df = df.reset_index().rename(columns={'Datetime': 'time', 'Date': 'time'})
+        df['time'] = df['time'].apply(lambda x: x.strftime('%Y-%m-%d %H:%M:%S')) 
         
         # Trend Indicators (EMA)
         df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
@@ -68,8 +77,11 @@ def get_pro_data(symbol, timeframe):
         
         df['strat_ret'] = df['signal'].shift(1) * df['close'].pct_change()
         df['cum_ret'] = (1 + df['strat_ret'].fillna(0)).cumprod() - 1
+        
         return df.dropna()
-    except: return pd.DataFrame()
+    except Exception as e:
+        print(f"Error: {e}")
+        return pd.DataFrame()
 
 # --- 4. SIDEBAR ---
 with st.sidebar:
@@ -88,6 +100,11 @@ with st.sidebar:
     show_ema200 = st.checkbox(f"🟣 EMA 200 ({t('ยาว', 'Long')})", value=True)
     
     st.divider()
+    if st.button("🔄 " + t("ล้างข้อมูล", "Refresh Data"), use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+        
+    st.divider()
     for cat, items in ASSET_GROUPS.items():
         with st.expander(cat, expanded=True):
             for sym, name in items.items():
@@ -99,11 +116,12 @@ with st.sidebar:
 if page == t("🔍 วิเคราะห์รายตัว", "Single View"):
     symbol = st.session_state.selected_stock
     df = get_pro_data(symbol, timeframe)
-    
+
     if not df.empty:
         col_h, col_r = st.columns([4, 1])
         col_h.subheader(f"📊 {symbol} ({timeframe})")
         if col_r.button("🎯 Reset View", use_container_width=True): st.rerun()
+        
         # Header Metrics
         curr = df['close'].iloc[-1]
         m1, m2, m3, m4 = st.columns(4)
@@ -112,19 +130,29 @@ if page == t("🔍 วิเคราะห์รายตัว", "Single View"
         m3.metric(t("แนวรับ", "Support"), f"{df['sup'].iloc[-1]:,.2f}")
         m4.metric(t("กำไรระบบ", "Strategy Profit"), f"{df['cum_ret'].iloc[-1]*100:.2f}%")
 
-        # Chart (Fixed NameError)
+
         chart = StreamlitChart(height=550)
+        
+
+        chart.legend(visible=True, font_size=14, font_family='Trebuchet MS')
+        
         chart.set(df)
+        
         if show_ema50:
-            l50 = chart.create_line(color='rgba(255, 235, 59, 0.8)')
-            l50.set(df[['time', 'ema50']].rename(columns={'ema50': 'value'}))
+
+            l50 = chart.create_line(name='EMA 50', color='rgba(255, 235, 59, 0.8)')
+            l50.set(df[['time', 'ema50']].rename(columns={'ema50': 'EMA 50'}))
+            
         if show_ema200:
-            l200 = chart.create_line(color='rgba(224, 64, 251, 0.9)')
-            l200.set(df[['time', 'ema200']].rename(columns={'ema200': 'value'}))
+
+            l200 = chart.create_line(name='EMA 200', color='rgba(224, 64, 251, 0.9)')
+            l200.set(df[['time', 'ema200']].rename(columns={'ema200': 'EMA 200'}))
+            
         chart.load()
 
+
         # Detailed Analysis
-        with st.expander(t("🔍 วิเคราะห์จุดเข้า-ออก", "Signal Insight"), expanded=True):
+    with st.expander(t("🔍 วิเคราะห์จุดเข้า-ออก", "Signal Insight"), expanded=True):
             s_col1, s_col2 = st.columns([1, 2])
             with s_col1:
                 last_sig = df['signal'].iloc[-1]
