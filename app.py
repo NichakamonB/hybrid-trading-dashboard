@@ -170,7 +170,7 @@ if page == t("🔍 วิเคราะห์รายตัว", "Single View"
         st.markdown(f"""
             <div style="text-align: center; color: gray; font-size: 14px;">
                 <p>© 2026 <b>KWAN TEST</b> | Intelligent Trading Analysis System</p>
-                <p>📊 Data Source: <a href="https://finance.yahoo.com/quote/{st.session_state.selected_stock}" target="_blank" style="color: #ff4b4b; text-decoration: none;">Verify on Yahoo Finance (Official)</a></p>
+                <p>📊 Data Source: <a href="https://finance.yahoo.com/quote/{st.session_state.selected_stock}" target="_blank" style="color: #ff4b4b; text-decoration: none;">Yahoo Finance (Official)</a></p>
                 <p style="font-size: 12px; opacity: 0.6;">Disclaimer: ข้อมูลนี้ใช้เพื่อการทดสอบและวิเคราะห์เชิงเทคนิคเท่านั้น ไม่ใช่คำแนะนำในการลงทุน</p>
             </div>
             """, unsafe_allow_html=True)
@@ -187,3 +187,4 @@ else:
                 c = StreamlitChart(height=450) 
                 render_full_chart(c, d)
                 c.load()
+
