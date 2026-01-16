@@ -5,7 +5,7 @@ import numpy as np
 from lightweight_charts.widgets import StreamlitChart
 from streamlit_autorefresh import st_autorefresh
 
-# --- 1. CONFIGURATION ---
+#  CONFIGURATION 
 st.set_page_config(layout="wide", page_title="kwan test", page_icon="📈")
 
 st.markdown("""
@@ -19,7 +19,7 @@ st.markdown("""
 
 st_autorefresh(interval=120000, key="kwan test")
 
-# --- 2. SYSTEM STATE ---
+#  SYSTEM STATE
 if 'lang' not in st.session_state: st.session_state.lang = 'TH'
 if 'selected_stock' not in st.session_state: st.session_state.selected_stock = "AAPL"
 
@@ -33,7 +33,7 @@ ASSET_GROUPS = {
 }
 ALL_SYMBOLS = [s for sub in ASSET_GROUPS.values() for s in sub]
 
-# --- 3. DATA ENGINE ---
+#  DATA ENGINE
 @st.cache_data(ttl=110)
 def get_pro_data(symbol, timeframe):
     tf_map = {'5min': '5m', '15min': '15m', '1hour': '1h', '1day': '1d'}
@@ -83,7 +83,7 @@ def get_pro_data(symbol, timeframe):
         return df.dropna().tail(250) 
     except: return pd.DataFrame()
 
-# --- 4. SIDEBAR ---
+#  SIDEBAR 
 with st.sidebar:
     st.markdown(f"### ⚡ **kwan test**")
     c1, c2 = st.columns(2)
@@ -93,7 +93,6 @@ with st.sidebar:
     st.divider()
     page = st.radio(t("โหมดการทำงาน", "Mode"), [t("🔍 วิเคราะห์รายตัว", "Single View"), t("📊 กระดาน 4 จอ", "4-Screen Grid")])
     
-    # เปลี่ยน index=3 เป็น index=0 เพื่อให้เริ่มต้นที่ 5min
     timeframe = st.selectbox(t("ช่วงเวลา", "Timeframe"), ('5min', '15min', '1hour', '1day'), index=0)
     
     st.divider()
@@ -112,7 +111,7 @@ with st.sidebar:
                 if st.button(name, key=f"s_{sym}", use_container_width=True):
                     st.session_state.selected_stock = sym; st.rerun()
 
-# --- 5. CHART HELPER ---
+# CHART HELPER 
 def render_full_chart(chart_obj, data):
     chart_obj.legend(visible=True, font_size=12, font_family='Trebuchet MS')
     chart_obj.set(data)
@@ -134,7 +133,7 @@ def render_full_chart(chart_obj, data):
         macd_l = chart_obj.create_line(name='MACD', color='#FF5252')
         macd_l.set(data[['time', 'macd_line']].rename(columns={'macd_line': 'MACD'}))
 
-# --- 6. MAIN CONTENT ---
+# MAIN CONTENT
 if page == t("🔍 วิเคราะห์รายตัว", "Single View"):
     symbol = st.session_state.selected_stock
     df = get_pro_data(symbol, timeframe)
@@ -168,7 +167,6 @@ if page == t("🔍 วิเคราะห์รายตัว", "Single View"
             with s_col2:
                 st.table(df[df['signal'] != 0][['time', 'close', 'signal']].tail(3))
 
-    # --- FOOTER (CR) แก้ไข Indentation แล้ว ---
     st.markdown("---")
     cf1, cf2, cf3 = st.columns([3, 4, 3])
     with cf2:
@@ -189,7 +187,6 @@ else:
     grid_cols = st.columns(2)
     for i in range(4):
         with grid_cols[i % 2]:
-            # เลือกหุ้นสำหรับแต่ละจอ
             sel = st.selectbox(f"จอ {i+1}", ALL_SYMBOLS, index=i, key=f"grid_sel_{i}")
             
             d = get_pro_data(sel, timeframe)
@@ -200,6 +197,7 @@ else:
                 c = StreamlitChart(height=400)
                 render_full_chart(c, d)
                 c.load()
+
 
 
 
