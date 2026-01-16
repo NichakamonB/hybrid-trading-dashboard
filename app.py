@@ -77,7 +77,7 @@ with st.sidebar:
     for cat, items in ASSET_GROUPS.items():
         with st.expander(cat, expanded=True):
             for sym, name in items.items():
-                if st.button(f"📈 {name}", key=f"s_{sym}", use_container_width=True):
+                if st.button(f"{name}", key=f"s_{sym}", use_container_width=True):
                     st.session_state.selected_stock = sym
                     st.rerun()
 
@@ -148,3 +148,4 @@ else:
     r2c1, r2c2 = st.columns(2)
     with r2c1: render_selectable_grid(3, 2)
     with r2c2: render_selectable_grid(4, 3)
+
