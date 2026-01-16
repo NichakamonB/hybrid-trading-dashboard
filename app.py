@@ -5,12 +5,11 @@ import numpy as np
 from lightweight_charts.widgets import StreamlitChart
 from streamlit_autorefresh import st_autorefresh
 
-#  CONFIGURATION 
+# --- 1. CONFIGURATION ---
 st.set_page_config(layout="wide", page_title="kwan test", page_icon="📈")
 
 st.markdown("""
     <style>
-
         .block-container { padding: 1rem 3rem 1rem 3rem !important; max-width: 100% !important; }
         iframe { width: 100% !important; border-radius: 8px !important; }
         [data-testid="stSidebar"] { width: 280px !important; }
@@ -18,10 +17,9 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-
 st_autorefresh(interval=120000, key="kwan test")
 
-# SYSTEM STATE
+# --- 2. SYSTEM STATE ---
 if 'lang' not in st.session_state: st.session_state.lang = 'TH'
 if 'selected_stock' not in st.session_state: st.session_state.selected_stock = "AAPL"
 
@@ -35,7 +33,7 @@ ASSET_GROUPS = {
 }
 ALL_SYMBOLS = [s for sub in ASSET_GROUPS.values() for s in sub]
 
-#  DATA ENGINE 
+# --- 3. DATA ENGINE ---
 @st.cache_data(ttl=110)
 def get_pro_data(symbol, timeframe):
     tf_map = {'5min': '5m', '15min': '15m', '1hour': '1h', '1day': '1d'}
@@ -85,7 +83,7 @@ def get_pro_data(symbol, timeframe):
         return df.dropna().tail(250) 
     except: return pd.DataFrame()
 
-#  SIDEBAR 
+# --- 4. SIDEBAR ---
 with st.sidebar:
     st.markdown(f"### ⚡ **kwan test**")
     c1, c2 = st.columns(2)
@@ -94,7 +92,9 @@ with st.sidebar:
     
     st.divider()
     page = st.radio(t("โหมดการทำงาน", "Mode"), [t("🔍 วิเคราะห์รายตัว", "Single View"), t("📊 กระดาน 4 จอ", "4-Screen Grid")])
-    timeframe = st.selectbox(t("ช่วงเวลา", "Timeframe"), ('5min', '15min', '1hour', '1day'), index=3)
+    
+    # เปลี่ยน index=3 เป็น index=0 เพื่อให้เริ่มต้นที่ 5min
+    timeframe = st.selectbox(t("ช่วงเวลา", "Timeframe"), ('5min', '15min', '1hour', '1day'), index=0)
     
     st.divider()
     st.markdown(f"**⚙️ {t('ตั้งค่ากราฟ', 'Indicators')}**")
@@ -112,7 +112,7 @@ with st.sidebar:
                 if st.button(name, key=f"s_{sym}", use_container_width=True):
                     st.session_state.selected_stock = sym; st.rerun()
 
-# CHART HELPER
+# --- 5. CHART HELPER ---
 def render_full_chart(chart_obj, data):
     chart_obj.legend(visible=True, font_size=12, font_family='Trebuchet MS')
     chart_obj.set(data)
@@ -134,7 +134,7 @@ def render_full_chart(chart_obj, data):
         macd_l = chart_obj.create_line(name='MACD', color='#FF5252')
         macd_l.set(data[['time', 'macd_line']].rename(columns={'macd_line': 'MACD'}))
 
-# MAIN CONTENT
+# --- 6. MAIN CONTENT ---
 if page == t("🔍 วิเคราะห์รายตัว", "Single View"):
     symbol = st.session_state.selected_stock
     df = get_pro_data(symbol, timeframe)
@@ -151,19 +151,19 @@ if page == t("🔍 วิเคราะห์รายตัว", "Single View"
         render_full_chart(chart, df)
         chart.load()
 
-    with st.expander(t("🔍 วิเคราะห์จุดเข้า-ออก", "Signal Insight"), expanded=True):
-         s_col1, s_col2 = st.columns([1, 2])
-        with s_col1:
-            last_sig = df['signal'].iloc[-1]
-            trend = "BULL" if curr > df['ema200'].iloc[-1] else "BEAR"
-            st.markdown(f"**Trend:** {'🟢' if trend=='BULL' else '🔴'} {trend}")
-            if last_sig == 1: st.success(t("✅ ซื้อ (Breakout)", "✅ BUY"))
-            elif last_sig == -1: st.error(t("❌ ขาย (Breakdown)", "❌ SELL"))
-            else: st.info(t("⌛ ถือ/รอ (Sideway)", "⌛ HOLD/WAIT"))
-        with s_col2:
-            st.table(df[df['signal'] != 0][['time', 'close', 'signal']].tail(3))
+        with st.expander(t("🔍 วิเคราะห์จุดเข้า-ออก", "Signal Insight"), expanded=True):
+            s_col1, s_col2 = st.columns([1, 2])
+            with s_col1:
+                last_sig = df['signal'].iloc[-1]
+                trend = "BULL" if curr > df['ema200'].iloc[-1] else "BEAR"
+                st.markdown(f"**Trend:** {'🟢' if trend=='BULL' else '🔴'} {trend}")
+                if last_sig == 1: st.success(t("✅ ซื้อ (Breakout)", "✅ BUY"))
+                elif last_sig == -1: st.error(t("❌ ขาย (Breakdown)", "❌ SELL"))
+                else: st.info(t("⌛ ถือ/รอ (Sideway)", "⌛ HOLD/WAIT"))
+            with s_col2:
+                st.table(df[df['signal'] != 0][['time', 'close', 'signal']].tail(3))
 
-    # --- 7. FOOTER SECTION ---
+    # --- FOOTER (CR) แก้ไข Indentation แล้ว ---
     st.markdown("---")
     cf1, cf2, cf3 = st.columns([3, 4, 3])
     with cf2:
@@ -171,7 +171,7 @@ if page == t("🔍 วิเคราะห์รายตัว", "Single View"
             <div style="text-align: center; color: gray; font-size: 14px;">
                 <p>© 2026 <b>KWAN TEST</b> | Intelligent Trading Analysis System</p>
                 <p>📊 Data Source: <a href="https://finance.yahoo.com/quote/{st.session_state.selected_stock}" target="_blank" style="color: #ff4b4b; text-decoration: none;">Verify on Yahoo Finance (Official)</a></p>
-                <p style="font-size: 12px; opacity: 0.6;">Disclaimer: ข้อมูลนี้ใช้เพื่อการทดสอบเท่านั้น ไม่ใช่คำแนะนำในการลงทุน</p>
+                <p style="font-size: 12px; opacity: 0.6;">Disclaimer: ข้อมูลนี้ใช้เพื่อการทดสอบและวิเคราะห์เชิงเทคนิคเท่านั้น ไม่ใช่คำแนะนำในการลงทุน</p>
             </div>
             """, unsafe_allow_html=True)
     
@@ -187,11 +187,3 @@ else:
                 c = StreamlitChart(height=450) 
                 render_full_chart(c, d)
                 c.load()
-
-
-
-
-
-
-
-
