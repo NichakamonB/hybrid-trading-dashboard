@@ -98,9 +98,10 @@ elif page == "🔥 Market Heatmap":
         d = get_processed_data(s, timeframe)
         if not d.empty:
             change = ((d['close'].iloc[-1] - d['open'].iloc[0]) / d['open'].iloc[0]) * 100
-            results.append({'Symbol': s, 'Change %': change, 'Last Price': d['close'].iloc[-1]})
+            results.append({'Symbol': s, 'Change %': change, 'Last Price $ ': d['close'].iloc[-1]})
     
     df_res = pd.DataFrame(results)
     fig_heat = px.bar(df_res, x='Symbol', y='Change %', color='Change %', color_continuous_scale='RdYlGn')
     st.plotly_chart(fig_heat, use_container_width=True)
     st.table(df_res)
+
