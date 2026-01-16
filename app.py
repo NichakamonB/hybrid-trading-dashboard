@@ -38,7 +38,6 @@ ASSET_GROUPS = {
     "📈 Indices": {"^SET.BK": "🇹🇭 SET Index", "^GSPC": "🇺🇸 S&P 500", "^IXIC": "🇺🇸 Nasdaq"}
 }
 
-# ✅ สร้างตัวแปรรวมรายชื่อหุ้นทั้งหมด (แก้ Error ที่คุณเจอ)
 ALL_SYMBOLS = [s for sub in ASSET_GROUPS.values() for s in sub]
 
 # --- 3. DATA ENGINE ---
@@ -53,11 +52,20 @@ def get_pro_data(symbol, timeframe):
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         df = df.reset_index().rename(columns={'Datetime': 'time', 'Date': 'time'})
         df.columns = df.columns.str.lower()
+        
+        # Trend Indicators (EMA)
+        df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
+        df['ema200'] = df['close'].ewm(span=200, adjust=False).mean()
+        
+        # Donchian Channels (S/R)
         df['res'] = df['high'].rolling(window=20).max()
         df['sup'] = df['low'].rolling(window=20).min()
+        
+        # Signals
         df['signal'] = 0
         df.loc[df['close'] > df['res'].shift(1), 'signal'] = 1
         df.loc[df['close'] < df['sup'].shift(1), 'signal'] = -1
+        
         df['strat_ret'] = df['signal'].shift(1) * df['close'].pct_change()
         df['cum_ret'] = (1 + df['strat_ret'].fillna(0)).cumprod() - 1
         return df.dropna()
@@ -65,15 +73,21 @@ def get_pro_data(symbol, timeframe):
 
 # --- 4. SIDEBAR ---
 with st.sidebar:
-    st.markdown("### ⚡ **KWAN TEST**")
+    st.markdown(f"### ⚡ **KWAN TEST**")
     c1, c2 = st.columns(2)
     if c1.button("🇹🇭 TH", use_container_width=True): st.session_state.lang = 'TH'; st.rerun()
     if c2.button("🇺🇸 EN", use_container_width=True): st.session_state.lang = 'EN'; st.rerun()
     
     st.divider()
-    page = st.radio(t("โหมดการทำงาน", "System Mode"), [t("🔍 วิเคราะห์รายตัว", "🔍 Single View"), t("📊 กระดาน 4 จอ", "📊 4-Screen Grid")])
+    page = st.radio(t("โหมดการทำงาน", "Mode"), [t("🔍 วิเคราะห์รายตัว", "Single View"), t("📊 กระดาน 4 จอ", "4-Screen Grid")])
     timeframe = st.selectbox(t("ช่วงเวลา", "Timeframe"), ('5min', '15min', '1hour', '1day'))
     
+    st.divider()
+    st.markdown(f"**⚙️ {t('ตั้งค่ากราฟ', 'Settings')}**")
+    show_ema50 = st.checkbox(f"🟡 EMA 50 ({t('กลาง', 'Mid')})", value=True)
+    show_ema200 = st.checkbox(f"🟣 EMA 200 ({t('ยาว', 'Long')})", value=True)
+    
+    st.divider()
     for cat, items in ASSET_GROUPS.items():
         with st.expander(cat, expanded=True):
             for sym, name in items.items():
@@ -82,7 +96,7 @@ with st.sidebar:
                     st.rerun()
 
 # --- 5. MAIN CONTENT ---
-if page == t("🔍 วิเคราะห์รายตัว", "🔍 Single View"):
+if page == t("🔍 วิเคราะห์รายตัว", "Single View"):
     symbol = st.session_state.selected_stock
     df = get_pro_data(symbol, timeframe)
     
@@ -90,62 +104,64 @@ if page == t("🔍 วิเคราะห์รายตัว", "🔍 Single 
         col_h, col_r = st.columns([4, 1])
         col_h.subheader(f"📊 {symbol} ({timeframe})")
         if col_r.button("🎯 Reset View", use_container_width=True): st.rerun()
-
-        m1, m2, m3, m4 = st.columns(4)
+        # Header Metrics
         curr = df['close'].iloc[-1]
-        m1.metric(t("ราคาล่าสุด", "Last Price"), f"{curr:,.2f}", f"{curr - df['close'].iloc[-2]:,.2f}")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric(t("ราคาล่าสุด", "Price"), f"{curr:,.2f}", f"{curr - df['close'].iloc[-2]:,.2f}")
         m2.metric(t("แนวต้าน", "Resistance"), f"{df['res'].iloc[-1]:,.2f}")
         m3.metric(t("แนวรับ", "Support"), f"{df['sup'].iloc[-1]:,.2f}")
         m4.metric(t("กำไรระบบ", "Strategy Profit"), f"{df['cum_ret'].iloc[-1]*100:.2f}%")
 
+        # Chart (Fixed NameError)
         chart = StreamlitChart(height=550)
         chart.set(df)
+        if show_ema50:
+            l50 = chart.create_line(color='rgba(255, 235, 59, 0.8)')
+            l50.set(df[['time', 'ema50']].rename(columns={'ema50': 'value'}))
+        if show_ema200:
+            l200 = chart.create_line(color='rgba(224, 64, 251, 0.9)')
+            l200.set(df[['time', 'ema200']].rename(columns={'ema200': 'value'}))
         chart.load()
 
-        st.markdown('<div style="height:1px;"></div>', unsafe_allow_html=True)
-        with st.expander(t("🔍 วิเคราะห์จุดเข้า-ออก แบบละเอียด", "🔍 Trade Signals & Detailed Insight"), expanded=True):
-            tab_sig, tab_info = st.tabs([t("📊 สัญญาณปัจจุบัน", "📊 Trade Signal"), t("🏢 ข้อมูลพื้นฐาน", "🏢 Asset Info")])
-            with tab_sig:
-                s_col1, s_col2 = st.columns([1, 2])
-                with s_col1:
-                    last_sig = df['signal'].iloc[-1]
-                    res_p, sup_p = df['res'].iloc[-1], df['sup'].iloc[-1]
-                    # Logic ถือ/รอ แบบละเอียด
-                    if last_sig == 1: st.success(t("✅ ซื้อ (Breakout)", "✅ BUY"))
-                    elif last_sig == -1: st.error(t("❌ ขาย (Breakdown)", "❌ SELL"))
-                    else:
-                        d_res = (res_p - curr)/curr * 100
-                        d_sup = (curr - sup_p)/curr * 100
-                        if d_res < 1.5: st.warning(t("⌛ รอ: จ่อเบรกแนวต้าน", "⌛ Wait: Near Resistance"))
-                        elif d_sup < 1.5: st.warning(t("⌛ รอ: จ่อหลุดแนวรับ", "⌛ Wait: Near Support"))
-                        else: st.info(t("⌛ ถือ/รอ: พักตัวในกรอบ", "⌛ Hold/Wait: Sideways"))
-                with s_col2:
-                    st.table(df[df['signal'] != 0][['time', 'close', 'signal']].tail(3))
-            with tab_info:
-                try:
-                    inf = yf.Ticker(symbol).info
-                    st.write(f"**Name:** {inf.get('longName', symbol)}")
-                    st.caption(inf.get('longBusinessSummary', '-')[:300] + "...")
-                except: st.write("No Data")
-
+        # Detailed Analysis
+        with st.expander(t("🔍 วิเคราะห์จุดเข้า-ออก", "Signal Insight"), expanded=True):
+            s_col1, s_col2 = st.columns([1, 2])
+            with s_col1:
+                last_sig = df['signal'].iloc[-1]
+                ema200_now = df['ema200'].iloc[-1]
+                trend = "BULL" if curr > ema200_now else "BEAR"
+                st.markdown(f"**Trend:** {'🟢' if trend=='BULL' else '🔴'} {trend}")
+                
+                if last_sig == 1:
+                    st.success(t("✅ ซื้อ (Breakout)", "✅ BUY"))
+                    if trend == "BEAR": st.warning(t("⚠️ ระวัง! สวนเทรนด์ใหญ่", "⚠️ Counter-Trend"))
+                elif last_sig == -1:
+                    st.error(t("❌ ขาย (Breakdown)", "❌ SELL"))
+                else:
+                    st.info(t("⌛ ถือ/รอ (Sideway)", "⌛ HOLD/WAIT"))
+            with s_col2:
+                st.table(df[df['signal'] != 0][['time', 'close', 'signal']].tail(3))
 else:
-    # --- 6. 4-SCREEN GRID (Fixed & Selectable) ---
-    st.subheader(t("📊 กระดาน 4 จอ", "📊 4-Screen Multi-Grid"))
-    
-    def render_selectable_grid(key, default_index):
-        # ป้องกัน index เกินจำนวนหุ้นที่มี
-        idx = default_index if default_index < len(ALL_SYMBOLS) else 0
-        selected_sym = st.selectbox(f"จอที่ {key}", ALL_SYMBOLS, index=idx, key=f"grid_sel_{key}")
-        d = get_pro_data(selected_sym, timeframe)
+    # --- 4-SCREEN GRID ---
+    st.subheader(t("📊 กระดาน 4 จอ", "4-Screen Grid"))
+    def render_grid(key, def_idx):
+        sel = st.selectbox(f"จอ {key}", ALL_SYMBOLS, index=def_idx, key=f"gs_{key}")
+        d = get_pro_data(sel, timeframe)
         if not d.empty:
-            st.markdown(f"**{selected_sym}** | Profit: {d['cum_ret'].iloc[-1]*100:.1f}%")
-            c = StreamlitChart(height=320); c.set(d); c.load()
+            st.markdown(f"**{sel}** | {d['close'].iloc[-1]:,.2f}")
+            c = StreamlitChart(height=300); c.set(d)
+            if show_ema50:
+                l50 = c.create_line(color='rgba(255, 235, 59, 0.8)')
+                l50.set(d[['time', 'ema50']].rename(columns={'ema50': 'value'}))
+            if show_ema200:
+                l200 = c.create_line(color='rgba(224, 64, 251, 0.9)')
+                l200.set(d[['time', 'ema200']].rename(columns={'ema200': 'value'}))
+            c.load()
 
     r1c1, r1c2 = st.columns(2)
-    with r1c1: render_selectable_grid(1, 0)
-    with r1c2: render_selectable_grid(2, 1)
+    with r1c1: render_grid(1, 0)
+    with r1c2: render_grid(2, 1)
     st.divider()
     r2c1, r2c2 = st.columns(2)
-    with r2c1: render_selectable_grid(3, 2)
-    with r2c2: render_selectable_grid(4, 3)
-
+    with r2c1: render_grid(3, 2)
+    with r2c2: render_grid(4, 3)
