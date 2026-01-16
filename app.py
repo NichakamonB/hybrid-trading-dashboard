@@ -179,7 +179,6 @@ if page == t("🔍 วิเคราะห์รายตัว", "Single View"
                 <p style="font-size: 12px; opacity: 0.6;">Disclaimer: ข้อมูลนี้ใช้เพื่อการทดสอบและวิเคราะห์เชิงเทคนิคเท่านั้น ไม่ใช่คำแนะนำในการลงทุน</p>
             </div>
             """, unsafe_allow_html=True)
-    
 else:
     st.subheader(t("📊 กระดาน 4 จอ", "4-Screen Grid"))
     grid_cols = st.columns(2)
@@ -188,12 +187,16 @@ else:
             sel = st.selectbox(f"จอ {i+1}", ALL_SYMBOLS, index=i, key=f"grid_sel_{i}")
             d = get_pro_data(sel, timeframe)
             if not d.empty:
-                if st.button(f"🔄 {t('กลับมาล่าสุด', 'Reset View')}", use_container_width=True):
-                st.rerun()
-                st.markdown(f"**{sel}** | {d['close'].iloc[-1]:,.2f}")
+                head1, head2 = st.columns([6, 4])
+                with head1:
+                    st.markdown(f"**{sel}** | {d['close'].iloc[-1]:,.2f}")
+                with head2:
+                    if st.button(f"🔄 {t('รีเซ็ต', 'Reset')}", key=f"grid_reset_{i}", use_container_width=True):
+                        st.rerun()
                 c = StreamlitChart(height=450) 
                 render_full_chart(c, d)
                 c.load()
+
 
 
 
