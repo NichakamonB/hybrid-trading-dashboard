@@ -6,8 +6,8 @@ from lightweight_charts.widgets import StreamlitChart
 # --- CONFIGURATION ---
 st.set_page_config(
     layout="wide", 
-    page_title="Kwan test", # เปลี่ยนชื่อที่แสดงบน Browser Tab เป็นชื่อที่คุณต้องการ
-    page_icon="📈"           # คุณสามารถเปลี่ยนไอคอนได้ตามใจชอบครับ
+    page_title="Kwan test",
+    page_icon="📈"          
 )
 
 # --- 2. MULTI-LANGUAGE SYSTEM ---
@@ -144,4 +144,5 @@ elif page in [t("📊 กระดาน 4 จอ", "📊 4-Screen Grid")]:
     c3, c4 = st.columns(2)
     with c3: render_grid_chart(3, ALL_SYMBOLS.index("BTC-USD"))
     with c4: render_grid_chart(4, ALL_SYMBOLS.index("^SET.BK"))
+
 
