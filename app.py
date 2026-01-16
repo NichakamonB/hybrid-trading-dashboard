@@ -1,172 +1,172 @@
+# -*- coding: utf-8 | แนะนำให้ Save ไฟล์เป็น UTF-8 -*-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 from lightweight_charts.widgets import StreamlitChart
 from streamlit_autorefresh import st_autorefresh
 
-# --- 1. CONFIGURATION ---
+# --- 1. CONFIGURATION & STYLING ---
 st.set_page_config(layout="wide", page_title="Kwan test", page_icon="📈")
 
 st.markdown("""
     <style>
-        /* ลดช่องว่างด้านบนของเนื้อหาหลัก */
-        .block-container {
-            padding-top: 1rem;
-            padding-bottom: 0rem;
-            margin-top: 0rem;
-        }
-        /* ลดช่องว่างด้านบนของ Sidebar */
-        [data-testid="stSidebarNav"] {
-            padding-top: 0rem;
-        }
-        /* ขยับส่วน Header ขึ้น */
-        .stElementContainer {
-            margin-bottom: 0rem;
-        }
-        /* 🎯 ปรับแต่งปุ่มเฉพาะใน Sidebar */
+        /* จัดการหน้าจอให้ชิดขอบที่สุด */
+        .block-container { padding-top: 0.5rem; padding-bottom: 0rem; }
+        [data-testid="stSidebarNav"] { padding-top: 0rem; }
+        
+        /* Sidebar Buttons: 1px Gap & Hover Effect */
         [data-testid="stSidebar"] .stButton > button {
-            height: 1.8rem;          /* ลดความสูงปุ่ม */
-            padding-top: 0px;        /* จัดข้อความให้อยู่ตรงกลาง */
-            padding-bottom: 0px;
-            font-size: 13px;         /* ลดขนาดตัวอักษร */
-            margin-bottom: 1px;     /* ลดระยะห่างระหว่างปุ่ม */
+            height: 2.0rem;
+            font-size: 14px;
+            margin-bottom: 1px !important;
+            border-radius: 4px;
+            text-align: left;
+            padding-left: 10px;
+            transition: all 0.2s;
+        }
+        [data-testid="stSidebar"] .stButton > button:hover {
+            background-color: #ff4b4b;
+            color: white;
+        }
+
+        /* 1px Gap for Info Expanders */
+        .stExpander { border: 1px solid rgba(255,255,255,0.1); margin-bottom: 1px !important; }
+        
+        /* Metric Box Styling */
+        div[data-testid="stMetric"] {
+            background-color: rgba(255,255,255,0.05);
+            padding: 10px;
+            border-radius: 5px;
         }
     </style>
     """, unsafe_allow_html=True)
 
-# ✅ 2. SET REAL-TIME REFRESH (ทุกๆ 30 วินาที)
-st_autorefresh(interval=30000, key="fivedatarefresh")
+# ✅ 2. REAL-TIME ENGINE
+st_autorefresh(interval=30000, key="Test")
 
-# --- 3. MULTI-LANGUAGE SYSTEM ---
-if 'lang' not in st.session_state:
-    st.session_state.lang = 'TH'
+# --- 3. SYSTEM STATE & ASSETS ---
+if 'lang' not in st.session_state: st.session_state.lang = 'TH'
+if 'selected_stock' not in st.session_state: st.session_state.selected_stock = "AAPL"
 
-def t(th, en):
-    return th if st.session_state.lang == 'TH' else en
+def t(th, en): return th if st.session_state.lang == 'TH' else en
 
-# --- 4. ASSET MAPPING ---
 ASSET_GROUPS = {
-    "🇺🇸 หุ้นสหรัฐฯ (US)": {
-        "AAPL": "🍎 APPLE", "TSLA": "🚗 TESLA", "NVDA": "🎮 NVIDIA",
-        "MSFT": "💻 MICROSOFT", "GOOGL": "🔍 GOOGLE"
-    },
-    "🇹🇭 หุ้นไทย (SET)": {
-        "CPALL.BK": "🛒 CPALL", "PTT.BK": "⛽ PTT", "AOT.BK": "✈️ AOT",
-        "KBANK.BK": "🏦 KBANK", "DELTA.BK": "🔌 DELTA"
-    },
-    "🪙 คริปโต (Crypto)": {
-        "BTC-USD": "₿ BITCOIN", "ETH-USD": "💎 ETHEREUM", "BNB-USD": "🔶 BINANCE"
-    },
-    "📈 ดัชนี (Indices)": {
-        "^SET.BK": "🇹🇭 SET Index", "^GSPC": "🇺🇸 S&P 500", "^IXIC": "🇺🇸 Nasdaq"
-    }
-}
+    "🇺🇸 US MARKET": {"AAPL": "🍎APPLE", "TSLA": "🚗TESLA", "NVDA": "🎮NVIDIA", "MSFT": "💻MICROSOFT", "GOOGL": "🔍 GOOGLE"},
+    "🇹🇭 THAI MARKET": {"CPALL.BK": "🛒 CPALL", "PTT.BK": "⛽ PTT", "AOT.BK": "✈️ AOT","KBANK.BK": "🏦 KBANK", "DELTA.BK": "🔌 DELTA"},
+    "🪙 CRYPTO": {"BTC-USD": "₿ BITCOIN", "ETH-USD": "💎 ETHEREUM", "BNB-USD": "🔶 BINANCE"},
+    "📈 ดัชนี (Indices)": {"^SET.BK": "🇹🇭 SET Index", "^GSPC": "🇺🇸 S&P 500", "^IXIC": "🇺🇸 Nasdaq"}
+}   
 
-ALL_SYMBOLS = [s for sub in ASSET_GROUPS.values() for s in sub]
-
-# --- 5. INITIAL SETTINGS ---
-if 'selected_stock' not in st.session_state:
-    st.session_state.selected_stock = "AAPL" 
-
-# --- 6. DATA ENGINE ---
-@st.cache_data(ttl=10) 
-def get_processed_data(symbol, timeframe):
+# --- 4. BACKTEST & ANALYTICS ENGINE ---
+@st.cache_data(ttl=15)
+def get_pro_data(symbol, timeframe):
     tf_map = {'5min': '5m', '15min': '15m', '1hour': '1h', '1day': '1d'}
     interval = tf_map.get(timeframe, '1d')
-    
-    if timeframe == '1day':
-        period = '2y'
-    elif timeframe == '1hour':
-        period = '730d'
-    else:
-        period = '60d'
-    
+    period = '2y' if timeframe == '1day' else '60d'
     try:
         df = yf.download(symbol, interval=interval, period=period, progress=False)
         if df.empty: return pd.DataFrame()
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-        
-        df = df.reset_index()
+        df = df.reset_index().rename(columns={'Datetime': 'time', 'Date': 'time'})
         df.columns = df.columns.str.lower()
-        df = df.rename(columns={'datetime': 'time', 'date': 'time'})
         
-        if timeframe == '1day':
-            df['time'] = pd.to_datetime(df['time']).dt.date
-        else:
-            df['time'] = pd.to_datetime(df['time']).dt.strftime('%Y-%m-%d %H:%M:%S')
-
-        df['resistance'] = df['high'].rolling(window=20).max()
-        df['support'] = df['low'].rolling(window=20).min()
+        # 📊 คำนวณแนวรับ-แนวต้าน (Donchian 20)
+        df['res'] = df['high'].rolling(window=20).max()
+        df['sup'] = df['low'].rolling(window=20).min()
         
+        # ⚡ สัญญาณซื้อขาย (Backtest Logic)
+        df['signal'] = 0
+        df.loc[df['close'] > df['res'].shift(1), 'signal'] = 1  # Buy Breakout
+        df.loc[df['close'] < df['sup'].shift(1), 'signal'] = -1 # Sell Breakdown
+        
+        # 📉 คำนวณกำไรสะสม
+        df['strat_ret'] = df['signal'].shift(1) * df['close'].pct_change()
+        df['cum_ret'] = (1 + df['strat_ret'].fillna(0)).cumprod() - 1
         return df.dropna()
-    except:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
-# --- 7. SIDEBAR ---
+# --- 5. SIDEBAR NAVIGATION ---
 with st.sidebar:
-    st.title("🚀 RT Trading Tool")
-    st.caption(f"Last Update: {pd.Timestamp.now().strftime('%H:%M:%S')}")
-    
-    l1, l2 = st.columns(2)
-    if l1.button("🇹🇭 ไทย", use_container_width=True): 
-        st.session_state.lang = 'TH'; st.rerun()
-    if l2.button("🇺🇸 EN", use_container_width=True): 
-        st.session_state.lang = 'EN'; st.rerun()
+    st.markdown("### ⚡ **KWAN**")
+    c1, c2 = st.columns(2)
+    if c1.button("🇹🇭 TH", use_container_width=True): st.session_state.lang = 'TH'; st.rerun()
+    if c2.button("🇺🇸 EN", use_container_width=True): st.session_state.lang = 'EN'; st.rerun()
     
     st.divider()
-    page = st.radio(t("🏠 เลือกโหมด:", "🏠 Mode:"), [t("🔍 วิเคราะห์รายตัว", "🔍 Single View"), t("📊 กระดาน 4 จอ", "📊 4-Screen Grid")])
-    st.divider()
-    timeframe = st.selectbox(t("ช่วงเวลา", "Timeframe"), ('5min', '15min', '1hour', '1day'), index=0)
+    page = st.radio(t("โหมดการทำงาน", "System Mode"), [t("🔍 วิเคราะห์รายตัว", "🔍 Single View"), t("📊 กระดาน 4 จอ", "📊 4-Screen Grid")])
+    timeframe = st.selectbox(t("ช่วงเวลา", "Timeframe"), ('5min', '15min', '1hour', '1day'))
     
     st.divider()
-    for category, items in ASSET_GROUPS.items():
-        with st.expander(category, expanded=(category == "🇺🇸 หุ้นสหรัฐฯ (US)")):
+    for cat, items in ASSET_GROUPS.items():
+        with st.expander(cat, expanded=True):
             for sym, name in items.items():
-                if st.button(name, key=f"nav_{sym}", use_container_width=True):
+                # ใส่ไอคอนตรงหน้าชื่อหุ้นเพื่อให้ชัดเจน
+                if st.button(f" {name}", key=f"s_{sym}", use_container_width=True):
                     st.session_state.selected_stock = sym
+                    st.rerun()
 
-# --- 8. MAIN PAGE ---
-if page in [t("🔍 วิเคราะห์รายตัว", "🔍 Single View")]:
+# --- 6. MAIN CONTENT ---
+if page == t("🔍 วิเคราะห์รายตัว", "🔍 Single View"):
     symbol = st.session_state.selected_stock
-    display_name = next((name for group in ASSET_GROUPS.values() for s, name in group.items() if s == symbol), symbol)
-    st.header(f"📈 {display_name} ({symbol})")
-    
-    df = get_processed_data(symbol, timeframe)
+    df = get_pro_data(symbol, timeframe)
     
     if not df.empty:
-        m_col1, m_col2, m_col3 = st.columns([1, 1, 0.4])
-        price_change = df['close'].iloc[-1] - df['close'].iloc[-2]
-        with m_col1:
-            m_col1.metric(t("ราคาล่าสุด", "Last Price"), f"{df['close'].iloc[-1]:,.2f}", f"{price_change:,.2f}")
-        with m_col2:
-            m_col2.metric(t("แนวต้าน (R)", "Resistance"), f"{df['resistance'].iloc[-1]:,.2f}")
-        with m_col3:
-            if st.button("🎯 Reset", use_container_width=True):
-                st.rerun()
+        # Header & Summary
+        col_h, col_r = st.columns([4, 1])
+        col_h.subheader(f"📊 {symbol} ({timeframe})")
+        if col_r.button("🎯 Reset View", use_container_width=True): st.rerun()
 
-        # วาดกราฟ (ย้ายออกมาข้างนอกเพื่อให้แสดงผลตลอดเวลา)
-        chart = StreamlitChart(height=600)
+        m1, m2, m3, m4 = st.columns(4)
+        curr = df['close'].iloc[-1]
+        diff = curr - df['close'].iloc[-2]
+        m1.metric(t("ราคาล่าสุด", "Last Price"), f"{curr:,.2f}", f"{diff:,.2f}")
+        m2.metric(t("แนวต้าน", "Resistance"), f"{df['res'].iloc[-1]:,.2f}")
+        m3.metric(t("แนวรับ", "Support"), f"{df['sup'].iloc[-1]:,.2f}")
+        m4.metric(t("กำไรจากระบบ", "System Profit"), f"{df['cum_ret'].iloc[-1]*100:.2f}%")
+
+        # 📈 กราฟหลัก
+        chart = StreamlitChart(height=550)
         chart.set(df)
         chart.load()
 
+        # 📋 ข้อมูลเชิงลึก & Backtest (เว้น 1px)
+        st.markdown('<div style="height:1px;"></div>', unsafe_allow_html=True)
+        with st.expander(t("🔍 วิเคราะห์จุดเข้า-ออก และ Backtest", "🔍 Trade Signals & Backtest"), expanded=True):
+            tab_sig, tab_info = st.tabs([t("📊 สัญญาณปัจจุบัน", "📊 Trade Signal"), t("🏢 ข้อมูลพื้นฐาน", "🏢 Asset Info")])
+            
+            with tab_sig:
+                s_col1, s_col2 = st.columns([1, 2])
+                with s_col1:
+                    last_sig = df['signal'].iloc[-1]
+                    if last_sig == 1: st.success(t("✅ สัญญาณ: ซื้อ", "✅ Signal: BUY"))
+                    elif last_sig == -1: st.error(t("❌ สัญญาณ: ขาย", "❌ Signal: SELL"))
+                    else: st.warning(t("⌛ สัญญาณ: ถือ/รอ", "⌛ Signal: HOLD"))
+                with s_col2:
+                    st.write(t("**รายการเทรดล่าสุด**", "**Recent Trade Log**"))
+                    log = df[df['signal'] != 0][['time', 'close', 'signal']].tail(3)
+                    st.table(log)
+
+            with tab_info:
+                try:
+                    info = yf.Ticker(symbol).info
+                    st.write(f"**Business:** {info.get('longName', symbol)}")
+                    st.caption(info.get('longBusinessSummary', '-')[:500] + "...")
+                except: st.write("No Data Found")
 else:
-    st.header(t("📊 กระดาน 4 จอ", "📊 4-Screen Grid"))
+    # 📊 กระดาน 4 จอ
+    st.subheader(t("📊 กระดาน 4 จออัจฉริยะ", "📊 4-Screen Multi-Grid"))
+    grid_syms = ["AAPL", "TSLA", "BTC-USD", "CPALL.BK"]
     
-    if st.button(t("🎯 รีเซ็ตทั้ง 4 จอเป็นราคาล่าสุด", "🎯 Reset All 4 Charts"), use_container_width=True):
-        st.rerun()
-
-    def render_grid_chart(key, default_sym):
-        s = st.selectbox(f"{t('จอที่', 'Screen')} {key}", ALL_SYMBOLS, index=ALL_SYMBOLS.index(default_sym), key=f"grid_sel_{key}")
-        d = get_processed_data(s, timeframe)
+    def draw_grid(sym):
+        d = get_pro_data(sym, timeframe)
         if not d.empty:
-            c = StreamlitChart(height=350)
-            c.set(d)
-            c.load()
+            st.markdown(f"**{sym}** | Ret: {d['cum_ret'].iloc[-1]*100:.1f}%")
+            c = StreamlitChart(height=320); c.set(d); c.load()
 
-    c1, c2 = st.columns(2)
-    with c1: render_grid_chart(1, "AAPL")
-    with c2: render_grid_chart(2, "TSLA")
-    
-    c3, c4 = st.columns(2)
-    with c3: render_grid_chart(3, "BTC-USD")
-    with c4: render_grid_chart(4, "^SET.BK")
+    r1_c1, r1_c2 = st.columns(2)
+    with r1_c1: draw_grid(grid_syms[0])
+    with r1_c2: draw_grid(grid_syms[1])
+    r2_c1, r2_c2 = st.columns(2)
+    with r2_c1: draw_grid(grid_syms[2])
+    with r2_c2: draw_grid(grid_syms[3])
