@@ -146,7 +146,7 @@ if page == t("🔍 วิเคราะห์รายตัว", "Single View"
         m3.metric(t("แนวรับ", "Support"), f"{df['sup'].iloc[-1]:,.2f}")
         m4.metric(t("กำไรระบบ", "Strategy Profit"), f"{df['cum_ret'].iloc[-1]*100:.2f}%")
 
-        chart = StreamlitChart(height=750)
+        chart = StreamlitChart(height=550)
         render_full_chart(chart, df)
         chart.load()
 
@@ -173,3 +173,4 @@ else:
                 c = StreamlitChart(height=450) 
                 render_full_chart(c, d)
                 c.load()
+
