@@ -4,3 +4,4 @@ pandas
 plotly
 lightweight-charts
 matplotlib
+streamlit-autorefresh
