@@ -1,656 +1,357 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 import numpy as np
-from lightweight_charts.widgets import StreamlitChart
-from streamlit_autorefresh import st_autorefresh
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import glob
+import os
+import time
 from datetime import datetime
+from typing import Dict, List, Optional, Tuple
 
-# ═══════════════════════════════════════════════════════════════
-# 🎨 ENHANCED UI CONFIGURATION
-# ═══════════════════════════════════════════════════════════════
-st.set_page_config(layout="wide", page_title="📊 Kwan test", page_icon="📈")
+# --- Try Import tvDatafeed safely ---
+try:
+    from tvDatafeed import TvDatafeed, Interval
+except ImportError:
+    st.error("⚠️ Library Missing: tvDatafeed. Please install: pip install git+https://github.com/rongardF/tvdatafeed.git")
+    st.stop()
 
-# 🎨 MODERN CSS STYLING (unchanged, keeping your excellent design)
+# ==========================================
+# 1. CONFIGURATION & UI THEME
+# ==========================================
+st.set_page_config(
+    page_title="Stock Scanner Pro (Cached)", 
+    layout="wide", 
+    page_icon="⚡",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS: Neon & Glassmorphism
 st.markdown("""
-    <style>
-        .block-container {
-            padding: 1rem 2rem 0.5rem 2rem !important;
-            max-width: 100% !important;
-        }
-        
-        [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
-            width: 320px !important;
-        }
-        [data-testid="stSidebar"] * {
-            color: #ffffff !important;
-        }
-        
-        div[data-testid="stMetric"] {
-            background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
-            padding: 20px;
-            border-radius: 15px;
-            border: 1px solid rgba(255,255,255,0.1);
-            backdrop-filter: blur(10px);
-            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-            transition: all 0.3s ease;
-        }
-        div[data-testid="stMetric"]:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.5);
-        }
-        div[data-testid="stMetric"] label {
-            font-size: 14px !important;
-            font-weight: 600 !important;
-            color: #94a3b8 !important;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        div[data-testid="stMetric"] [data-testid="stMetricValue"] {
-            font-size: 32px !important;
-            font-weight: 700 !important;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        
-        .stButton > button {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-            color: white !important;
-            border: none !important;
-            border-radius: 10px !important;
-            padding: 12px 24px !important;
-            font-weight: 600 !important;
-            transition: all 0.3s ease !important;
-            box-shadow: 0 4px 15px 0 rgba(102, 126, 234, 0.4) !important;
-        }
-        .stButton > button:hover {
-            transform: translateY(-2px) !important;
-            box-shadow: 0 6px 20px 0 rgba(102, 126, 234, 0.6) !important;
-        }
-        
-        .streamlit-expanderHeader {
-            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
-            border-radius: 10px;
-            border: 1px solid rgba(102, 126, 234, 0.2);
-            font-weight: 600;
-            padding: 8px 12px;
-            font-size: 0.9em;
-        }
-        
-        .stSelectbox > div > div {
-            background: rgba(255,255,255,0.05) !important;
-            border-radius: 8px !important;
-            border: 1px solid rgba(255,255,255,0.1) !important;
-            padding: 6px 10px !important;
-            font-size: 0.9em !important;
-        }
-        
-        iframe {
-            width: 100% !important;
-            border-radius: 15px !important;
-            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.2) !important;
-        }
-        
-        .status-badge {
-            display: inline-block;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-weight: 600;
-            font-size: 14px;
-            margin: 5px 0;
-        }
-        .badge-bull {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            color: white;
-        }
-        .badge-bear {
-            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-            color: white;
-        }
-        
-        .animated-bg {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: -1;
-            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
-        }
-        .animated-bg::before {
-            content: '';
-            position: absolute;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(102, 126, 234, 0.1) 0%, transparent 50%);
-            animation: pulse 15s ease-in-out infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { transform: translate(-50%, -50%) scale(1); }
-            50% { transform: translate(-50%, -50%) scale(1.1); }
-        }
-        
-        /* Error Message Styling */
-        .stAlert {
-            border-radius: 10px;
-        }
-    </style>
-    <div class="animated-bg"></div>
-    """, unsafe_allow_html=True)
-
-# Auto-refresh every 2 minutes
-st_autorefresh(interval=120000, key="dashboard_refresh")
-
-# ═══════════════════════════════════════════════════════════════
-# 💾 SYSTEM STATE
-# ═══════════════════════════════════════════════════════════════
-if 'lang' not in st.session_state: 
-    st.session_state.lang = 'TH'
-if 'selected_stock' not in st.session_state: 
-    st.session_state.selected_stock = "AAPL"
-if 'last_update' not in st.session_state:
-    st.session_state.last_update = None
-
-def t(th, en): 
-    return th if st.session_state.lang == 'TH' else en
-
-ASSET_GROUPS = {
-    "🇺🇸 US MARKET": {
-        "AAPL": "🍎 Apple", "TSLA": "🚗 Tesla", "NVDA": "🎮 Nvidia", 
-        "MSFT": "💻 Microsoft", "GOOGL": "🔍 Google", "AMZN": "📦 Amazon"
-    },
-    "🇹🇭 THAI MARKET": {
-        "CPALL.BK": "🛒 CP All", "PTT.BK": "⛽ PTT", "AOT.BK": "✈️ AOT",
-        "KBANK.BK": "🏦 Kasikorn", "DELTA.BK": "🔌 Delta", "SCB.BK": "🏦 SCB"
-    },
-    "🪙 CRYPTO": {
-        "BTC-USD": "₿ Bitcoin", "ETH-USD": "💎 Ethereum", 
-        "BNB-USD": "🔶 Binance", "SOL-USD": "☀️ Solana"
-    },
-    "📈 INDICES": {
-        "^SET.BK": "🇹🇭 SET Index", "^GSPC": "🇺🇸 S&P 500", 
-        "^IXIC": "🇺🇸 Nasdaq", "^DJI": "🇺🇸 Dow Jones"
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap');
+    html, body, [class*="css"] { font-family: 'Prompt', sans-serif; }
+    
+    .stApp {
+        background-color: #0b0f19;
+        background-image: 
+            radial-gradient(at 0% 0%, rgba(41, 98, 255, 0.15) 0px, transparent 50%),
+            radial-gradient(at 100% 0%, rgba(233, 30, 99, 0.1) 0px, transparent 50%);
+        color: #e0e0e0;
     }
-}
-ALL_SYMBOLS = [s for sub in ASSET_GROUPS.values() for s in sub]
+    
+    [data-testid="stSidebar"] { background-color: rgba(17, 24, 39, 0.95); border-right: 1px solid rgba(255, 255, 255, 0.05); }
 
-# ═══════════════════════════════════════════════════════════════
-# 📊 DATA ENGINE - IMPROVED ERROR HANDLING
-# ═══════════════════════════════════════════════════════════════
-@st.cache_data(ttl=110)
-def get_pro_data(symbol, timeframe):
-    """
-    Fetch and process market data with comprehensive error handling
-    
-    Improvements:
-    - Better error handling with specific error messages
-    - Data validation
-    - Safer timezone handling
-    - Division by zero protection for RSI calculation
-    """
-    tf_map = {'5min': '5m', '15min': '15m', '1hour': '1h', '1day': '1d'}
-    interval = tf_map.get(timeframe, '1d')
-    
-    period_map = {'5min': '5d', '15min': '5d', '1hour': '1mo', '1day': '6mo'}
-    period = period_map.get(timeframe, '6mo')
-    
-    try:
-        # Download data
-        df = yf.download(symbol, interval=interval, period=period, progress=False, auto_adjust=False)
-        
-        # Validate data
-        if df.empty:
-            st.warning(f"⚠️ No data available for {symbol}")
-            return pd.DataFrame()
-        
-        # Handle MultiIndex columns
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        
-        df.columns = df.columns.str.lower()
-        
-        # Timezone handling
-        if isinstance(df.index, pd.DatetimeIndex):
-            if df.index.tz is None:
-                df.index = df.index.tz_localize('UTC')
-            df.index = df.index.tz_convert('Asia/Bangkok')
-        
-        # Reset index
-        df = df.reset_index()
-        df.rename(columns={'Datetime': 'time', 'Date': 'time'}, inplace=True)
-        df['time'] = df['time'].apply(lambda x: x.strftime('%Y-%m-%d %H:%M:%S'))
-        
-        # === TECHNICAL INDICATORS ===
-        
-        # EMAs
-        df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
-        df['ema200'] = df['close'].ewm(span=200, adjust=False).mean()
-        
-        # Bollinger Bands
-        df['sma20'] = df['close'].rolling(window=20).mean()
-        df['std20'] = df['close'].rolling(window=20).std()
-        df['bb_up'] = df['sma20'] + (df['std20'] * 2)
-        df['bb_low'] = df['sma20'] - (df['std20'] * 2)
-        
-        # RSI - with division by zero protection
-        delta = df['close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        
-        # Avoid division by zero
-        rs = gain / loss.replace(0, np.nan)
-        df['rsi'] = 100 - (100 / (1 + rs))
-        df['rsi'].fillna(50, inplace=True)  # Fill NaN with neutral 50
-        
-        # MACD
-        df['macd_line'] = df['close'].ewm(span=12, adjust=False).mean() - df['close'].ewm(span=26, adjust=False).mean()
-        df['macd_signal'] = df['macd_line'].ewm(span=9, adjust=False).mean()
-        df['macd_hist'] = df['macd_line'] - df['macd_signal']
-        
-        # Support/Resistance
-        df['res'] = df['high'].rolling(window=20).max()
-        df['sup'] = df['low'].rolling(window=20).min()
-        
-        # Trading signals
-        df['signal'] = 0
-        df.loc[df['close'] > df['res'].shift(1), 'signal'] = 1
-        df.loc[df['close'] < df['sup'].shift(1), 'signal'] = -1
-        
-        # Strategy returns
-        df['cum_ret'] = (1 + (df['signal'].shift(1) * df['close'].pct_change()).fillna(0)).cumprod() - 1
-        
-        # Update last update time
-        st.session_state.last_update = datetime.now()
-        
-        return df.dropna().tail(300)
-        
-    except Exception as e:
-        st.error(f"❌ Error fetching data for {symbol}: {str(e)}")
-        return pd.DataFrame()
+    /* Custom Radio Buttons */
+    div[role="radiogroup"] > label > div:first-child { display: none !important; }
+    div[role="radiogroup"] label {
+        background: rgba(255, 255, 255, 0.03) !important;
+        border: 1px solid rgba(255, 255, 255, 0.05) !important;
+        border-radius: 8px !important;
+        padding: 8px !important;
+        margin-bottom: 4px !important;
+        color: #b0bec5 !important;
+        justify-content: center;
+    }
+    div[role="radiogroup"] label:hover {
+        background: rgba(255, 255, 255, 0.08) !important;
+        border-color: rgba(100, 181, 246, 0.5) !important;
+    }
+    div[role="radiogroup"] label[data-baseweb="radio"] {
+        background: linear-gradient(90deg, rgba(41, 98, 255, 0.8) 0%, rgba(21, 101, 192, 0.8) 100%) !important;
+        border: 1px solid #2962ff !important;
+        color: #fff !important;
+        box-shadow: 0 0 10px rgba(41, 98, 255, 0.3);
+    }
 
-# ═══════════════════════════════════════════════════════════════
-# 📊 CHART RENDERING FUNCTIONS
-# ═══════════════════════════════════════════════════════════════
-def render_main_chart(chart_obj, data):
-    """Render main price chart with price-related indicators"""
-    try:
-        chart_obj.legend(visible=True, font_size=12, font_family='SF Pro Display, Segoe UI, sans-serif')
-        chart_obj.set(data)
-        
-        if show_vol:
-            v = chart_obj.create_histogram(name='Volume', color='rgba(102, 126, 234, 0.3)')
-            v.set(data[['time', 'volume']].rename(columns={'volume': 'Volume'}))
-        
-        if show_bb:
-            chart_obj.create_line(name='BB Upper', color='rgba(147, 197, 253, 0.6)').set(
-                data[['time', 'bb_up']].rename(columns={'bb_up': 'BB Upper'}))
-            chart_obj.create_line(name='BB Lower', color='rgba(147, 197, 253, 0.6)').set(
-                data[['time', 'bb_low']].rename(columns={'bb_low': 'BB Lower'}))
-        
-        if show_ema50:
-            chart_obj.create_line(name='EMA 50', color='#fbbf24', width=2).set(
-                data[['time', 'ema50']].rename(columns={'ema50': 'EMA 50'}))
-        
-        if show_ema200:
-            chart_obj.create_line(name='EMA 200', color='#a855f7', width=2).set(
-                data[['time', 'ema200']].rename(columns={'ema200': 'EMA 200'}))
-    except Exception as e:
-        st.error(f"Chart rendering error: {str(e)}")
-
-def render_full_chart(chart_obj, data):
-    """Render simplified chart for grid view"""
-    try:
-        chart_obj.legend(visible=True, font_size=11, font_family='SF Pro Display, Segoe UI, sans-serif')
-        chart_obj.set(data)
-        
-        if show_vol:
-            v = chart_obj.create_histogram(name='Volume', color='rgba(102, 126, 234, 0.3)')
-            v.set(data[['time', 'volume']].rename(columns={'volume': 'Volume'}))
-        
-        if show_ema50:
-            chart_obj.create_line(name='EMA 50', color='#fbbf24', width=2).set(
-                data[['time', 'ema50']].rename(columns={'ema50': 'EMA 50'}))
-        
-        if show_ema200:
-            chart_obj.create_line(name='EMA 200', color='#a855f7', width=2).set(
-                data[['time', 'ema200']].rename(columns={'ema200': 'EMA 200'}))
-    except Exception as e:
-        st.error(f"Grid chart error: {str(e)}")
-
-# ═══════════════════════════════════════════════════════════════
-# 🎨 SIDEBAR
-# ═══════════════════════════════════════════════════════════════
-with st.sidebar:
-    st.markdown("""
-        <div style='text-align: center; padding: 20px 0;'>
-            <h1 style='font-size: 2.5em; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;'>
-                📊 Kwan test
-            </h1>
-            <p style='color: #94a3b8; font-size: 0.9em; margin-top: 5px;'>Test Plot graph ,Indicator </p>
-        </div>
-    """, unsafe_allow_html=True)
+    /* Cards */
+    .metric-card {
+        background: rgba(30, 41, 59, 0.4); backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 16px;
+        padding: 15px; text-align: center; margin-bottom: 10px; height: 100%;
+    }
+    .val-box { font-size: 1.4rem; font-weight: 600; margin: 5px 0; }
+    .status-bull { color: #00e676; text-shadow: 0 0 10px rgba(0, 230, 118, 0.3); }
+    .status-bear { color: #ff1744; text-shadow: 0 0 10px rgba(255, 23, 68, 0.3); }
+    .status-neutral { color: #ffea00; }
     
-    # Language Toggle
-    col1, col2 = st.columns(2)
-    if col1.button("🇹🇭 ไทย", use_container_width=True): 
-        st.session_state.lang = 'TH'
-        st.rerun()
-    if col2.button("🇺🇸 EN", use_container_width=True): 
-        st.session_state.lang = 'EN'
-        st.rerun()
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    # Mode Selection
-    st.markdown(f"### {t('⚙️ โหมดการทำงาน', '⚙️ Display Mode')}")
-    page = st.radio(
-        "",
-        [t("🔍 วิเคราะห์รายตัว", "🔍 Single Asset"), 
-         t("📊 กระดาน 4 จอ", "📊 Multi-View Grid")],
-        label_visibility="collapsed"
-    )
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    # Timeframe
-    st.markdown(f"### {t('⏰ ช่วงเวลา', '⏰ Timeframe')}")
-    timeframe = st.selectbox("", ['5min', '15min', '1hour', '1day'], index=0, label_visibility="collapsed")
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    # Indicators
-    st.markdown(f"### {t('📈 ตัวชี้วัด', '📈 Indicators')}")
-    with st.container():
-        show_vol = st.checkbox(t("📊 Volume", "📊 Volume"), value=True)
-        show_ema50 = st.checkbox("📉 EMA 50", value=True)
-        show_ema200 = st.checkbox("📈 EMA 200", value=True)
-        show_bb = st.checkbox("🎯 Bollinger Bands", value=False)
-        show_rsi = st.checkbox("⚡ RSI", value=False)
-        show_macd = st.checkbox("🌊 MACD", value=False)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    # Asset Selection
-    st.markdown(f"### {t('🎯 เลือกสินทรัพย์', '🎯 Select Asset')}")
-    for cat, items in ASSET_GROUPS.items():
-        with st.expander(cat, expanded=(cat == "🇺🇸 US MARKET")):
-            for sym, name in items.items():
-                if st.button(name, key=f"s_{sym}", use_container_width=True):
-                    st.session_state.selected_stock = sym
-                    st.rerun()
-    
-    # Last update info
-    if st.session_state.last_update:
-        st.markdown(f"""
-            <div style='text-align: center; color: #64748b; font-size: 0.75em; padding: 10px; margin-top: 20px;'>
-                <p>🕐 {t('อัปเดตล่าสุด', 'Last Update')}:<br>{st.session_state.last_update.strftime('%H:%M:%S')}</p>
-            </div>
-        """, unsafe_allow_html=True)
-
-# ═══════════════════════════════════════════════════════════════
-# 🎯 MAIN CONTENT - SINGLE VIEW
-# ═══════════════════════════════════════════════════════════════
-if page == t("🔍 วิเคราะห์รายตัว", "🔍 Single Asset"):
-    symbol = st.session_state.selected_stock
-    df = get_pro_data(symbol, timeframe)
-    
-    if not df.empty:
-        # Header
-        col1, col2 = st.columns([8, 2])
-        with col1:
-            st.markdown(f"""
-                <h1 style='margin: 0; font-size: 2.5em;'>
-                    📊 {symbol} 
-                    <span style='font-size: 0.5em; color: #94a3b8;'>({timeframe})</span>
-                </h1>
-            """, unsafe_allow_html=True)
-        with col2:
-            if st.button(f"🔄 {t('รีเฟรช', 'Refresh')}", use_container_width=True):
-                st.cache_data.clear()
-                st.rerun()
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Metrics Dashboard
-        curr = df['close'].iloc[-1]
-        prev = df['close'].iloc[-2] if len(df) > 1 else curr
-        change = curr - prev
-        change_pct = (change / prev) * 100 if prev != 0 else 0
-        
-        m1, m2, m3, m4 = st.columns(4)
-        
-        with m1:
-            st.metric(
-                t("💰 ราคาปัจจุบัน", "💰 Current Price"),
-                f"${curr:,.2f}" if not symbol.endswith('.BK') else f"฿{curr:,.2f}",
-                f"{change:+,.2f} ({change_pct:+.2f}%)"
-            )
-        
-        with m2:
-            res_val = df['res'].iloc[-1]
-            st.metric(
-                t("📈 แนวต้าน", "📈 Resistance"),
-                f"${res_val:,.2f}" if not symbol.endswith('.BK') else f"฿{res_val:,.2f}",
-                f"{((res_val - curr) / curr * 100):+.2f}%"
-            )
-        
-        with m3:
-            sup_val = df['sup'].iloc[-1]
-            st.metric(
-                t("📉 แนวรับ", "📉 Support"),
-                f"${sup_val:,.2f}" if not symbol.endswith('.BK') else f"฿{sup_val:,.2f}",
-                f"{((curr - sup_val) / curr * 100):+.2f}%"
-            )
-        
-        with m4:
-            strategy_profit = df['cum_ret'].iloc[-1] * 100
-            st.metric(
-                t("🎯 กำไรกลยุทธ์", "🎯 Strategy P/L"),
-                f"{strategy_profit:+.2f}%",
-                t("แบ็คเทสต์", "Backtest")
-            )
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Main Chart
-        chart = StreamlitChart(height=550)
-        render_main_chart(chart, df)
-        chart.load()
-        
-        # RSI Chart
-        if show_rsi:
-            st.markdown("<br>", unsafe_allow_html=True)
-            col_rsi1, col_rsi2 = st.columns([1, 20])
-            with col_rsi1:
-                st.markdown("### ⚡")
-            with col_rsi2:
-                rsi_chart = StreamlitChart(height=180)
-                rsi_chart.legend(visible=True, font_size=11)
-                
-                rsi_line = rsi_chart.create_line(name='RSI', color='#8b5cf6', width=2)
-                rsi_line.set(df[['time', 'rsi']].rename(columns={'rsi': 'RSI'}))
-                
-                df_temp = df.copy()
-                df_temp['rsi_70'] = 70
-                df_temp['rsi_30'] = 30
-                df_temp['rsi_50'] = 50
-                
-                rsi_chart.create_line(name='', color='rgba(239, 68, 68, 0.3)', width=1).set(
-                    df_temp[['time', 'rsi_70']].rename(columns={'rsi_70': '70'}))
-                rsi_chart.create_line(name='', color='rgba(34, 197, 94, 0.3)', width=1).set(
-                    df_temp[['time', 'rsi_30']].rename(columns={'rsi_30': '30'}))
-                rsi_chart.create_line(name='', color='rgba(148, 163, 184, 0.2)', width=1).set(
-                    df_temp[['time', 'rsi_50']].rename(columns={'rsi_50': '50'}))
-                
-                rsi_chart.load()
-        
-        # MACD Chart
-        if show_macd:
-            st.markdown("<br>", unsafe_allow_html=True)
-            col_macd1, col_macd2 = st.columns([1, 20])
-            with col_macd1:
-                st.markdown("### 🌊")
-            with col_macd2:
-                macd_chart = StreamlitChart(height=180)
-                macd_chart.legend(visible=True, font_size=11)
-                
-                macd_hist = macd_chart.create_histogram(name='Histogram', color='rgba(102, 126, 234, 0.4)')
-                macd_hist.set(df[['time', 'macd_hist']].rename(columns={'macd_hist': 'Histogram'}))
-                
-                macd_line = macd_chart.create_line(name='MACD', color='#3b82f6', width=2)
-                macd_line.set(df[['time', 'macd_line']].rename(columns={'macd_line': 'MACD'}))
-                
-                signal_line = macd_chart.create_line(name='Signal', color='#f59e0b', width=2)
-                signal_line.set(df[['time', 'macd_signal']].rename(columns={'macd_signal': 'Signal'}))
-                
-                df_temp = df.copy()
-                df_temp['zero'] = 0
-                macd_chart.create_line(name='', color='rgba(148, 163, 184, 0.3)', width=1).set(
-                    df_temp[['time', 'zero']].rename(columns={'zero': '0'}))
-                
-                macd_chart.load()
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Signal Analysis
-        with st.expander(t("🔍 วิเคราะห์สัญญาณ", "🔍 Signal Analysis"), expanded=True):
-            col1, col2 = st.columns([1, 2])
-            
-            with col1:
-                last_sig = df['signal'].iloc[-1]
-                trend = "BULL" if curr > df['ema200'].iloc[-1] else "BEAR"
-                
-                st.markdown(f"""
-                    <div style='text-align: center; padding: 20px;'>
-                        <h3>{t('📊 เทรนด์ตลาด', '📊 Market Trend')}</h3>
-                        <div class='status-badge {"badge-bull" if trend=="BULL" else "badge-bear"}'>
-                            {'🟢 BULLISH' if trend=='BULL' else '🔴 BEARISH'}
-                        </div>
-                        <br><br>
-                        <h3>{t('⚡ สัญญาณ', '⚡ Signal')}</h3>
-                """, unsafe_allow_html=True)
-                
-                if last_sig == 1:
-                    st.success(f"✅ {t('ซื้อ (Breakout)', 'BUY (Breakout)')}")
-                elif last_sig == -1:
-                    st.error(f"❌ {t('ขาย (Breakdown)', 'SELL (Breakdown)')}")
-                else:
-                    st.info(f"⌛ {t('รอสัญญาณ', 'HOLD/WAIT')}")
-                
-                st.markdown("</div>", unsafe_allow_html=True)
-            
-            with col2:
-                st.markdown(f"#### {t('📋 ประวัติสัญญาณล่าสุด', '📋 Recent Signals')}")
-                signal_df = df[df['signal'] != 0][['time', 'close', 'signal']].tail(5).copy()
-                if not signal_df.empty:
-                    signal_df['signal'] = signal_df['signal'].map({1: '✅ BUY', -1: '❌ SELL'})
-                    signal_df.columns = [t('เวลา', 'Time'), t('ราคา', 'Price'), t('สัญญาณ', 'Signal')]
-                    st.dataframe(signal_df, use_container_width=True, hide_index=True)
-                else:
-                    st.info(t("ไม่มีสัญญาณในช่วงเวลานี้", "No signals in this period"))
-        
-        # Technical Stats
-        with st.expander(t("📊 สถิติทางเทคนิค", "📊 Technical Statistics")):
-            stat_col1, stat_col2, stat_col3 = st.columns(3)
-            
-            with stat_col1:
-                st.metric("RSI (14)", f"{df['rsi'].iloc[-1]:.2f}")
-                st.metric("MACD", f"{df['macd_line'].iloc[-1]:.4f}")
-            
-            with stat_col2:
-                st.metric(t("ความผันผวน (20)", "Volatility (20)"), f"{df['std20'].iloc[-1]:.2f}")
-                st.metric(t("ช่วงราคา (H-L)", "Range (H-L)"), f"{df['high'].iloc[-1] - df['low'].iloc[-1]:.2f}")
-            
-            with stat_col3:
-                st.metric(t("ปริมาณเฉลี่ย", "Avg Volume"), f"{df['volume'].tail(20).mean():,.0f}")
-                st.metric(t("ปริมาณล่าสุด", "Last Volume"), f"{df['volume'].iloc[-1]:,.0f}")
-    else:
-        st.error(f"❌ {t('ไม่สามารถโหลดข้อมูลสำหรับ', 'Unable to load data for')} {symbol}")
-
-# ═══════════════════════════════════════════════════════════════
-# 📊 MULTI-VIEW GRID
-# ═══════════════════════════════════════════════════════════════
-else:
-    # Compact Header
-    col1, col2 = st.columns([8, 2])
-    with col1:
-        st.markdown(f"""
-            <h2 style='margin: 0; padding: 10px 0;'>
-                📊 {t('กระดาน 4 จอ', 'Multi-View Dashboard')}
-            </h2>
-        """, unsafe_allow_html=True)
-    with col2:
-        if st.button(f"🔄 {t('รีเซ็ต', 'Reset')}", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
-    
-    # Grid Layout - 2x2
-    row1_cols = st.columns(2)
-    row2_cols = st.columns(2)
-    
-    all_cols = [row1_cols[0], row1_cols[1], row2_cols[0], row2_cols[1]]
-    
-    for i in range(4):
-        with all_cols[i]:
-            # Compact Symbol Selector
-            sel = st.selectbox(
-                "", 
-                ALL_SYMBOLS, 
-                index=min(i, len(ALL_SYMBOLS)-1), 
-                key=f"grid_sel_{i}",
-                label_visibility="collapsed"
-            )
-            
-            d = get_pro_data(sel, timeframe)
-            
-            if not d.empty:
-                curr_price = d['close'].iloc[-1]
-                prev_price = d['close'].iloc[-2] if len(d) > 1 else curr_price
-                change = ((curr_price - prev_price) / prev_price) * 100 if prev_price != 0 else 0
-                
-                # Compact Price Display
-                st.markdown(f"""
-                    <div style='background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 8px; margin-bottom: 8px;'>
-                        <div style='display: flex; justify-content: space-between; align-items: center;'>
-                            <span style='font-weight: 600; font-size: 0.95em;'>{sel}</span>
-                            <span style='font-size: 1.1em; font-weight: 700; color: {"#10b981" if change >= 0 else "#ef4444"};'>
-                                ${curr_price:,.2f} <span style='font-size: 0.75em;'>({change:+.2f}%)</span>
-                            </span>
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-                # Smaller Chart
-                c = StreamlitChart(height=320)
-                render_full_chart(c, d)
-                c.load()
-            else:
-                st.warning(f"⚠️ {t('ไม่สามารถโหลด', 'Cannot load')} {sel}")
-
-# ═══════════════════════════════════════════════════════════════
-# 🔗 FOOTER
-# ═══════════════════════════════════════════════════════════════
-st.markdown("<br><br>", unsafe_allow_html=True)
-st.markdown(f"""
-    <div style='text-align: center; padding: 30px; background: rgba(255,255,255,0.02); border-radius: 15px; border: 1px solid rgba(255,255,255,0.05);'>
-        <p style='font-size: 1.1em; margin-bottom: 10px;'>
-            📊 {t('ข้อมูลจาก', 'Data Source')}: 
-            <a href="https://finance.yahoo.com/quote/{st.session_state.selected_stock}" 
-               target="_blank" 
-               style="color: #667eea; text-decoration: none; font-weight: 600;">
-                Yahoo Finance (Official API)
-            </a>
-        </p>
-        <p style='font-size: 0.85em; color: #64748b; margin: 0;'>
-            ⚠️ {t('ข้อมูลนี้ใช้เพื่อการศึกษาและวิเคราะห์เท่านั้น ไม่ใช่คำแนะนำการลงทุน', 
-                  'This information is for educational purposes only. Not financial advice.')}
-        </p>
-        <p style='font-size: 0.75em; color: #475569; margin-top: 10px;'>
-            🔐 {t('ปลอดภัย | อัปเดตทุก 2 นาที | เทคโนโลยีล้ำสมัย', 'Secure | Auto-refresh every 2 min | Advanced Technology')}
-        </p>
-    </div>
+    .stats-header {
+        background: linear-gradient(90deg, rgba(41, 98, 255, 0.2), transparent);
+        border-left: 4px solid #2962ff;
+        padding: 8px 15px; border-radius: 0 8px 8px 0;
+        margin-bottom: 10px; font-size: 0.9em;
+    }
+</style>
 """, unsafe_allow_html=True)
 
+EMA_COLORS = { 5: '#00e676', 10: '#ffea00', 20: '#2979ff', 50: '#ff9100', 89: '#d500f9', 200: '#ffffff' }
 
+# ==========================================
+# 2. CACHED DATA FUNCTIONS (CORE ENGINE)
+# ==========================================
+
+@st.cache_resource(ttl=None)
+def get_tv_instance():
+    """Singleton for TV Datafeed connection."""
+    try:
+        username = st.secrets.get("TV_USERNAME")
+        password = st.secrets.get("TV_PASSWORD")
+        if username and password:
+            return TvDatafeed(username=username, password=password)
+        return TvDatafeed()
+    except:
+        return TvDatafeed()
+
+@st.cache_data(ttl=3600) # Cache Watchlist for 1 Hour
+def load_watchlist() -> Optional[pd.DataFrame]:
+    """Load Excel files or generate Fallback Watchlist."""
+    all_files = glob.glob("**/resistance_*.xlsx", recursive=True)
+    
+    if not all_files:
+        # Fallback Mock Data if no Excel found
+        data = {
+            'Symbol': ['PTT', 'AOT', 'DELTA', 'KBANK', 'SCB', 'CPALL', 'TSLA', 'AAPL', 'NVDA'],
+            'Source': ['SET']*6 + ['NASDAQ']*3,
+            'Exchange': ['SET']*6 + ['NASDAQ']*3,
+            'Attempts': [20, 15, 10, 25, 12, 8, 50, 45, 60],
+            '+1': [18, 12, 9, 20, 10, 6, 30, 25, 40]
+        }
+        df = pd.DataFrame(data)
+        df['WinRate'] = (df['+1'] / df['Attempts']) * 100
+        return df
+    
+    df_list = []
+    for f in all_files:
+        try:
+            df_temp = pd.read_excel(f)
+            folder = os.path.dirname(f)
+            if folder: name = folder.replace("resistance_", "").replace("_Turbo", "").upper()
+            else: name = os.path.basename(f).replace("resistance_", "").replace(".xlsx", "").upper()
+            
+            df_temp['Source'] = name
+            df_temp['Symbol'] = df_temp['Symbol'].astype(str).str.replace(r'\.0$', '', regex=True)
+            if 'Exchange' not in df_temp.columns: df_temp['Exchange'] = 'SET'
+            df_list.append(df_temp)
+        except: continue 
+            
+    if df_list:
+        combined = pd.concat(df_list, ignore_index=True)
+        if 'Attempts' in combined.columns:
+            combined['WinRate'] = (combined['+1'] / combined['Attempts']) * 100 
+        else: combined['WinRate'] = 0
+        combined = combined.fillna(0).sort_values(by=['WinRate', 'Attempts'], ascending=[False, False])
+        return combined.drop_duplicates(subset=['Symbol'], keep='first')
+    return None
+
+def generate_dummy_data(symbol="DEMO"):
+    """Generates synthetic Random Walk data to prevent crashes."""
+    dates = pd.date_range(end=datetime.now(), periods=200, freq='B')
+    base = 100
+    rets = np.random.normal(0, 0.02, 200)
+    close = base * np.cumprod(1 + rets)
+    high = close * (1 + np.abs(np.random.normal(0, 0.01, 200)))
+    low = close * (1 - np.abs(np.random.normal(0, 0.01, 200)))
+    open_p = close * (1 + np.random.normal(0, 0.005, 200))
+    vol = np.random.randint(1000, 50000, size=200)
+    
+    df = pd.DataFrame({'open': open_p, 'high': high, 'low': low, 'close': close, 'volume': vol}, index=dates)
+    df = calculate_indicators(df)
+    df['signal'] = False
+    return df
+
+def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    # MACD
+    exp12 = df['close'].ewm(span=12, adjust=False).mean()
+    exp26 = df['close'].ewm(span=26, adjust=False).mean()
+    df['MACD'] = exp12 - exp26
+    df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+    df['MACD_Hist'] = df['MACD'] - df['Signal']
+    # RSI
+    delta = df['close'].diff()
+    gain = delta.where(delta > 0, 0).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+    # EMAs
+    for span in [5, 10, 20, 50, 89, 200]:
+        df[f'EMA{span}'] = df['close'].ewm(span=span, adjust=False).mean()
+    return df
+
+def process_shooting_star(df: pd.DataFrame) -> pd.DataFrame:
+    o, h, l, c = df["open"], df["high"], df["low"], df["close"]
+    bodyTop, bodyBot = np.maximum(o, c), np.minimum(o, c)
+    body = bodyTop - bodyBot
+    rng = (h - l).replace(0, 0.0001)
+    upperWick = h - bodyTop
+    lowerWick = bodyBot - l
+    
+    notDoji = body > rng * 0.15
+    lowerShort = lowerWick <= body * 0.40
+    upTrend = c > c.rolling(20).mean()
+    prevGreen = c.shift(1) > o.shift(1)
+    gapUp = o > c.shift(1) 
+    wickC = upperWick >= body * 2
+    
+    df["signal"] = (notDoji & wickC & lowerShort & upTrend & prevGreen & gapUp)
+    return df
+
+@st.cache_data(ttl=1800, show_spinner=False) # Cache Stock Data for 30 mins
+def get_stock_data(symbol: str, exchange: str, force_exchange: str = "Auto") -> Tuple[Optional[pd.DataFrame], bool]:
+    tv = get_tv_instance()
+    symbol = str(symbol).strip().replace(".0", "")
+    target = str(exchange).strip().upper() if force_exchange == "Auto" else force_exchange
+    
+    attempts = []
+    if force_exchange != "Auto": attempts.append({'s': symbol, 'e': force_exchange})
+    attempts += [{'s': symbol, 'e': target}, {'s': symbol, 'e': 'SET'}, {'s': symbol, 'e': 'NASDAQ'}]
+    if target in ['HK', 'HKEX']: attempts.append({'s': symbol.zfill(4), 'e': 'HKEX'})
+
+    for a in attempts:
+        try:
+            if a['e'] in ["NAN", "UNNAMED"]: continue
+            df = tv.get_hist(symbol=a['s'], exchange=a['e'], interval=Interval.in_daily, n_bars=300)
+            if df is not None and not df.empty:
+                df = calculate_indicators(df)
+                df = process_shooting_star(df)
+                return df, True
+        except: continue
+
+    return generate_dummy_data(symbol), False
+
+# ==========================================
+# 3. CHART & UI HELPERS
+# ==========================================
+def create_chart(df: pd.DataFrame, config: Dict) -> go.Figure:
+    row_specs = [{'height': 0.6}]
+    if config['macd']: row_specs.append({'height': 0.2})
+    if config['rsi']: row_specs.append({'height': 0.2})
+    
+    fig = make_subplots(rows=len(row_specs), cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[r['height'] for r in row_specs])
+    
+    # Price
+    fig.add_trace(go.Candlestick(x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'], name='Price', increasing_line_color='#00e676', decreasing_line_color='#ff1744'), row=1, col=1)
+    
+    if config['trend']:
+        for e in config['emas']:
+            if f'EMA{e}' in df.columns:
+                fig.add_trace(go.Scatter(x=df.index, y=df[f'EMA{e}'], mode='lines', name=f'EMA{e}', line=dict(color=EMA_COLORS.get(e, 'white'), width=1)), row=1, col=1)
+    
+    if config['star'] and 'signal' in df.columns:
+        star = df[df['signal'] == True]
+        if not star.empty:
+            fig.add_trace(go.Scatter(x=star.index, y=star['high']*1.02, mode='markers', marker=dict(symbol='arrow-down', size=12, color='#ffea00'), name='Star'), row=1, col=1)
+
+    r = 2
+    if config['macd']:
+        fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], line=dict(color='#2979ff'), name='MACD'), row=r, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['Signal'], line=dict(color='#ff9100'), name='Sig'), row=r, col=1)
+        fig.add_trace(go.Bar(x=df.index, y=df['MACD_Hist'], marker_color=['#00e676' if x>0 else '#ff1744' for x in df['MACD_Hist']], name='Hist'), row=r, col=1)
+        r += 1
+    
+    if config['rsi']:
+        fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#d500f9'), name='RSI'), row=r, col=1)
+        fig.add_hline(y=70, line_dash='dash', line_color='red', row=r, col=1)
+        fig.add_hline(y=30, line_dash='dash', line_color='green', row=r, col=1)
+
+    fig.update_layout(height=400 + (len(row_specs)*150), margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#b0bec5', family='Prompt'), showlegend=False, xaxis_rangeslider_visible=False, hovermode='x unified')
+    fig.update_xaxes(showgrid=True, gridcolor='rgba(255,255,255,0.06)'); fig.update_yaxes(showgrid=True, gridcolor='rgba(255,255,255,0.06)')
+    return fig
+
+def create_card(title, value, status, sub=""):
+    return f"<div class='metric-card'><h4 style='margin:0;opacity:0.8'>{title}</h4><div class='val-box status-{status}'>{value}</div><div style='font-size:0.8em;opacity:0.6'>{sub}</div></div>"
+
+# ==========================================
+# 4. MAIN APPLICATION
+# ==========================================
+def main():
+    # --- Sidebar Controls ---
+    st.sidebar.title("⚡ Scanner Pro")
+    
+    if st.sidebar.button("🔄 Refresh Cache", help="Clear memory and reload data"):
+        st.cache_data.clear()
+        st.rerun()
+
+    # --- Load Data (Cached) ---
+    with st.spinner("📂 Loading Watchlist..."):
+        df_watch = load_watchlist()
+    
+    if df_watch is None: st.error("Fatal Error: Watchlist Failed"); st.stop()
+
+    # --- Filters ---
+    st.sidebar.subheader("🎯 Filters")
+    sources = sorted(df_watch['Source'].unique())
+    sel_src = st.sidebar.multiselect("Markets", sources, default=sources)
+    min_att = st.sidebar.slider("Min Count", 0, 50, 5)
+    
+    mask = (df_watch['Source'].isin(sel_src)) & (df_watch['Attempts'] >= min_att)
+    filtered = df_watch[mask].sort_values(by=['WinRate', 'Attempts'], ascending=[False, False])
+    
+    # --- Settings ---
+    st.sidebar.markdown("---")
+    show_trend = st.sidebar.checkbox("Trend", True)
+    show_macd = st.sidebar.checkbox("MACD", True)
+    show_rsi = st.sidebar.checkbox("RSI", False)
+    show_star = st.sidebar.checkbox("Shooting Star", True)
+    sel_emas = st.sidebar.multiselect("EMA", [5, 20, 50, 200], [20, 50, 200]) if show_trend else []
+
+    # --- Layout ---
+    col_list, col_main = st.columns([1, 4])
+    
+    with col_list:
+        st.markdown("### Watchlist")
+        search = st.text_input("🔍", placeholder="Search Symbol", label_visibility="collapsed")
+        if search: filtered = filtered[filtered['Symbol'].str.contains(search, case=False, na=False)]
+        
+        st.markdown(f"<div class='stats-header'>Matches: <strong>{len(filtered)}</strong></div>", unsafe_allow_html=True)
+        
+        if not filtered.empty:
+            filtered['Label'] = filtered.apply(lambda x: f"{x['Symbol']} | {int(x['WinRate'])}%", axis=1)
+            with st.container(height=650):
+                sel_label = st.radio("List", filtered['Label'].tolist(), label_visibility="collapsed")
+            sel_row = filtered[filtered['Label'] == sel_label].iloc[0]
+            sel_sym, sel_ex = sel_row['Symbol'], sel_row['Exchange']
+        else:
+            st.warning("No Data"); st.stop()
+
+    with col_main:
+        c1, c2 = st.columns([3, 1])
+        with c1: st.markdown(f"## 🚀 {sel_sym} <span style='color:#90caf9;font-size:0.6em'>({sel_ex})</span>", unsafe_allow_html=True)
+        with c2: range_t = st.radio("Time", ["3M", "6M", "1Y"], index=1, horizontal=True, label_visibility="collapsed")
+        
+        # --- Fetch Stock Data (Cached) ---
+        with st.spinner(f"📡 Downloading {sel_sym}..."):
+            df, is_live = get_stock_data(sel_sym, sel_ex)
+            
+        if df is not None:
+            df.index = pd.to_datetime(df.index).normalize()
+            if is_live: st.success(f"🟢 Connected: {sel_ex}", icon="📶")
+            else: st.warning(f"🟠 Simulation Data (API Timeout)", icon="⚠️")
+            
+            # Slice Data
+            bars = 66 if range_t == "3M" else (132 if range_t == "6M" else 252)
+            d_view = df.tail(bars)
+            last = df.iloc[-1]
+
+            # KPI Cards
+            k1, k2, k3, k4 = st.columns(4)
+            with k1:
+                mp, mc = last.get('MACD',0)>0, last.get('MACD',0)>last.get('Signal',0)
+                st.markdown(create_card("MACD", "BULL" if mp else "BEAR", "bull" if mp else "bear", "Cross UP" if mc else "Down"), unsafe_allow_html=True)
+            with k2:
+                r = last.get('RSI', 50)
+                st.markdown(create_card("RSI", f"{r:.1f}", "bear" if r>70 else "bull" if r<30 else "neutral", "Over" if r>70 else "Norm"), unsafe_allow_html=True)
+            with k3:
+                ema_bull = sum([1 for e in sel_emas if last['close'] > last.get(f'EMA{e}', 999999)])
+                st.markdown(create_card("TREND", f"{ema_bull}/{len(sel_emas)}", "bull" if ema_bull==len(sel_emas) else "neutral", "EMAs Passed"), unsafe_allow_html=True)
+            with k4:
+                is_star = last.get('signal', False)
+                st.markdown(create_card("PATTERN", "STAR" if is_star else "-", "bear" if is_star else "neutral", "Detected" if is_star else "None"), unsafe_allow_html=True)
+
+            # Chart
+            config = {'trend': show_trend, 'macd': show_macd, 'rsi': show_rsi, 'star': show_star, 'emas': sel_emas}
+            st.plotly_chart(create_chart(d_view, config), use_container_width=True)
+        else:
+            st.error("Data Load Failed")
+
+if __name__ == "__main__":
+    main()
